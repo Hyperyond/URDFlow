@@ -1,3 +1,5 @@
+// Test fixture. The app serves an equivalent copy at
+// apps/web/public/robots/two-joint-arm.urdf — keep the two in sync if either changes.
 export const twoJointArmURDF = `<?xml version="1.0"?>
 <robot name="two_joint_arm">
   <link name="base_link">
