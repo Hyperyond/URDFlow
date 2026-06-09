@@ -1,0 +1,43 @@
+# --- Local-only tooling / internal docs (kept out of this open-core repo) ---
+.claude/
+docs/superpowers/
+
+# --- Node / Next.js ---
+node_modules/
+.next/
+out/
+dist/
+build/
+.turbo/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- Env / secrets ---
+.env
+.env.*
+!.env.example
+
+# --- Python (robot host) ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Datasets / large artifacts (LeRobot parquet + video) ---
+*.parquet
+/data/
+/datasets/
+
+# --- OS / editor ---
+.DS_Store
+*.swp
+.idea/
+.vscode/
