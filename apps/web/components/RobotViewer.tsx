@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, type RefObject } from "react";
+import { useState, useEffect, type RefObject } from "react";
 import { Canvas } from "@react-three/fiber";
 import {
   OrbitControls,
@@ -26,19 +26,14 @@ export interface RobotViewerProps {
 export function RobotViewer({ robot, boxPosition, onBoxMove, captureRefs }: RobotViewerProps) {
   // ref-callback into state so TransformControls mounts once the mesh exists
   const [boxMesh, setBoxMesh] = useState<Mesh | null>(null);
-  const tableRef = useRef<Mesh>(null);
-
-  // Layer 1 = "capture" layer the front/wrist cameras render (real-looking scene,
-  // no editor helpers). Robot + box live on both layers; the matte ground is capture-only.
+  // Layer 1 = "capture" layer the cameras render (real scene, no editor helpers).
+  // Robot + box + table all live on both layers (viewport + camera feeds).
   useEffect(() => {
     robot?.traverse((o) => o.layers.enable(1));
   }, [robot]);
   useEffect(() => {
     boxMesh?.layers.enable(1);
   }, [boxMesh]);
-  useEffect(() => {
-    tableRef.current?.layers.enable(1); // table on both layers (viewport + camera feeds)
-  }, []);
 
   return (
     <div className="relative h-full w-full">
@@ -88,9 +83,9 @@ export function RobotViewer({ robot, boxPosition, onBoxMove, captureRefs }: Robo
 
         {/* Soft fake contact shadow grounds the arm without a solid ground plane. */}
         {/* work table (both layers): operation surface in the viewport AND the camera feeds */}
-        <mesh ref={tableRef} position={[0.15, -0.026, 0.15]}>
+        <mesh ref={(m) => m?.layers.enable(1)} position={[0.15, -0.026, 0.15]}>
           <boxGeometry args={[1.1, 0.05, 1.1]} />
-          <meshStandardMaterial color="#c9c2b4" roughness={0.75} metalness={0.05} />
+          <meshStandardMaterial color="#a9a292" roughness={0.7} metalness={0.05} />
         </mesh>
         <ContactShadows position={[0, 0.001, 0]} opacity={0.5} scale={5} blur={2.6} far={3} />
         <Grid
