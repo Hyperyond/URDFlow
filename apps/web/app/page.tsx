@@ -5,7 +5,7 @@ import { RobotViewer } from "../components/RobotViewer";
 import { JointPanel } from "../components/JointPanel";
 
 export default function Page() {
-  const { robot, model, values, error, onChange } = useURDF("/robots/two-joint-arm.urdf");
+  const { robot, model, values, error, onChange } = useURDF("/robots/ur5/ur5.urdf");
   return (
     <main style={{ position: "relative" }}>
       <RobotViewer robot={robot} />

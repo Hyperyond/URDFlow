@@ -7,7 +7,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body style={{ margin: 0 }}>{children}</body>
+      {/* suppressHydrationWarning: browser extensions (e.g. Grammarly) inject
+          attributes on <body>, causing benign hydration mismatches. */}
+      <body style={{ margin: 0 }} suppressHydrationWarning>
+        {children}
+      </body>
     </html>
   );
 }
