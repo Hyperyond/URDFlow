@@ -11,7 +11,7 @@ export interface RobotViewerProps {
   robot: URDFRobot | null;
   boxPosition?: [number, number, number];
   onBoxMove?: (p: [number, number, number]) => void;
-  captureRefs?: { front: RefObject<HTMLCanvasElement | null>; wrist: RefObject<HTMLCanvasElement | null> };
+  captureRefs?: { front: RefObject<HTMLCanvasElement | null>; top: RefObject<HTMLCanvasElement | null> };
 }
 
 export function RobotViewer({ robot, boxPosition, onBoxMove, captureRefs }: RobotViewerProps) {
@@ -45,9 +45,7 @@ export function RobotViewer({ robot, boxPosition, onBoxMove, captureRefs }: Robo
         <directionalLight position={[-5, 3, -4]} intensity={0.6} color="#9db4ff" />
 
         {robot && <primitive object={robot} />}
-        {robot && captureRefs && (
-          <CaptureRig robot={robot} frontCanvas={captureRefs.front} wristCanvas={captureRefs.wrist} />
-        )}
+        {captureRefs && <CaptureRig frontCanvas={captureRefs.front} topCanvas={captureRefs.top} />}
 
         {/* Draggable target box — user positions it, planGrasp aims for it. */}
         {boxPosition && (

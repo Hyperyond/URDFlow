@@ -18,7 +18,7 @@ export default function Page() {
   const ed = useGraspEditor(r.robot, r.model);
   const [uploaded, setUploaded] = useState<{ label: string }[]>([]);
   const frontCamRef = useRef<HTMLCanvasElement>(null);
-  const wristCamRef = useRef<HTMLCanvasElement>(null);
+  const topCamRef = useRef<HTMLCanvasElement>(null);
 
   async function handleFileList(list: FileList) {
     const entries = await entriesFromFileList(list);
@@ -72,7 +72,7 @@ export default function Page() {
             robot={r.robot}
             boxPosition={ed.boxPosition}
             onBoxMove={ed.setBoxPosition}
-            captureRefs={{ front: frontCamRef, wrist: wristCamRef }}
+            captureRefs={{ front: frontCamRef, top: topCamRef }}
           />
           {r.loading && <LoadingOverlay progress={r.progress} />}
           {r.error && (
@@ -86,7 +86,7 @@ export default function Page() {
             </div>
           )}
         </main>
-        <CameraPanel frontRef={frontCamRef} wristRef={wristCamRef} />
+        <CameraPanel frontRef={frontCamRef} topRef={topCamRef} />
       </div>
       <Timeline
         keyframes={ed.keyframes}
