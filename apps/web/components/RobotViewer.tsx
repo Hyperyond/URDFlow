@@ -1,18 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type RefObject } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Grid, ContactShadows, TransformControls, GizmoHelper, GizmoViewport } from "@react-three/drei";
 import { ACESFilmicToneMapping, type Mesh } from "three";
 import type { URDFRobot } from "@urdflow/urdf-web";
+import { CaptureRig } from "./CaptureRig";
 
 export interface RobotViewerProps {
   robot: URDFRobot | null;
   boxPosition?: [number, number, number];
   onBoxMove?: (p: [number, number, number]) => void;
+  captureRefs?: { front: RefObject<HTMLCanvasElement | null>; wrist: RefObject<HTMLCanvasElement | null> };
 }
 
-export function RobotViewer({ robot, boxPosition, onBoxMove }: RobotViewerProps) {
+export function RobotViewer({ robot, boxPosition, onBoxMove, captureRefs }: RobotViewerProps) {
   // ref-callback into state so TransformControls mounts once the mesh exists
   const [boxMesh, setBoxMesh] = useState<Mesh | null>(null);
 
@@ -30,6 +32,9 @@ export function RobotViewer({ robot, boxPosition, onBoxMove }: RobotViewerProps)
         <directionalLight position={[-5, 3, -4]} intensity={0.6} color="#9db4ff" />
 
         {robot && <primitive object={robot} />}
+        {robot && captureRefs && (
+          <CaptureRig robot={robot} frontCanvas={captureRefs.front} wristCanvas={captureRefs.wrist} />
+        )}
 
         {/* Draggable target box — user positions it, planGrasp aims for it. */}
         {boxPosition && (

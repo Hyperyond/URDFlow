@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRobotSource } from "../lib/useRobotSource";
 import { useGraspEditor } from "../lib/useGraspEditor";
 import { entriesFromFileList, entriesFromZip, entriesFromDataTransfer } from "../lib/fileInput";
@@ -17,6 +17,8 @@ export default function Page() {
   const r = useRobotSource();
   const ed = useGraspEditor(r.robot, r.model);
   const [uploaded, setUploaded] = useState<{ label: string }[]>([]);
+  const frontCamRef = useRef<HTMLCanvasElement>(null);
+  const wristCamRef = useRef<HTMLCanvasElement>(null);
 
   async function handleFileList(list: FileList) {
     const entries = await entriesFromFileList(list);
@@ -66,7 +68,12 @@ export default function Page() {
       <div className="grid grid-cols-[auto_1fr_auto] overflow-hidden">
         <SceneOutliner nodes={sceneNodes} />
         <main className="relative">
-          <RobotViewer robot={r.robot} boxPosition={ed.boxPosition} onBoxMove={ed.setBoxPosition} />
+          <RobotViewer
+            robot={r.robot}
+            boxPosition={ed.boxPosition}
+            onBoxMove={ed.setBoxPosition}
+            captureRefs={{ front: frontCamRef, wrist: wristCamRef }}
+          />
           {r.loading && <LoadingOverlay progress={r.progress} />}
           {r.error && (
             <div className="absolute left-3 top-3 rounded border border-red-500/30 bg-red-500/10 px-2 py-1 text-xs text-red-300">
@@ -79,7 +86,7 @@ export default function Page() {
             </div>
           )}
         </main>
-        <CameraPanel />
+        <CameraPanel frontRef={frontCamRef} wristRef={wristCamRef} />
       </div>
       <Timeline
         keyframes={ed.keyframes}
