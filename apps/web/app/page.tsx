@@ -51,7 +51,7 @@ export default function Page() {
         robotLabel={r.source.label}
         presets={PRESETS}
         uploaded={uploaded}
-        onPickPreset={(p) => r.loadPreset(p.url, p.name)}
+        onPickPreset={(p) => r.loadPreset(p)}
         onPickFiles={handleFileList}
         onPickZip={handleZip}
       />
