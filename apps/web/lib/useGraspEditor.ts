@@ -138,15 +138,16 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
       const id = `cube-${idRef.current++}`;
       setObjects((o) => {
         const n = o.length;
+        // on the table top (~y=0.225) in front of the base — comfortable top-down reach
         return [
           ...o,
-          { id, position: [0.25 + (n % 3) * 0.09, 0.025, 0.26 + Math.floor(n / 3) * 0.09] as [number, number, number] },
+          { id, position: [0.42 + (n % 3) * 0.09, 0.225, -0.08 + Math.floor(n / 3) * 0.09] as [number, number, number] },
         ];
       });
       setSelectedId(id);
     },
     addTarget: () => {
-      setTarget([0.12, 0.026, -0.02]);
+      setTarget([0.5, 0.226, 0.16]);
       setSelectedId("target");
     },
     removeObject: (id: string) => setObjects((o) => o.filter((x) => x.id !== id)),

@@ -155,9 +155,9 @@ export function RobotViewer({
           />
         )}
 
-        {/* work table (both layers): operation surface in viewport AND camera feeds */}
-        <mesh ref={(m) => m?.layers.enable(1)} position={[0.15, -0.026, 0.15]}>
-          <boxGeometry args={[1.1, 0.05, 1.1]} />
+        {/* work table at ~0.2m in front of the base, so the arm tops-down onto it naturally */}
+        <mesh ref={(m) => m?.layers.enable(1)} position={[0.45, 0.1, 0]}>
+          <boxGeometry args={[0.65, 0.2, 0.65]} />
           <meshStandardMaterial color="#a9a292" roughness={0.7} metalness={0.05} />
         </mesh>
         <ContactShadows position={[0, 0.001, 0]} opacity={0.5} scale={5} blur={2.6} far={3} />
