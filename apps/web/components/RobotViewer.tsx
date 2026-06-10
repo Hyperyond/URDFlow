@@ -189,6 +189,11 @@ export function RobotViewer({
           <boxGeometry args={[0.2, PEDESTAL_H, 0.2]} />
           <meshStandardMaterial color="#5a5f66" roughness={0.6} metalness={0.3} />
         </mesh>
+        {/* work surface in front of the pedestal — objects rest here at a reachable height */}
+        <mesh ref={(m) => m?.layers.enable(1)} position={[0.45, 0.06, 0]}>
+          <boxGeometry args={[0.55, 0.12, 0.55]} />
+          <meshStandardMaterial color="#b8b2a4" roughness={0.7} metalness={0.05} />
+        </mesh>
         <ContactShadows position={[0, 0.001, 0]} opacity={0.5} scale={5} blur={2.6} far={3} />
         <Grid
           args={[10, 10]}
