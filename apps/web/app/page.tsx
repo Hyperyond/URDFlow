@@ -11,9 +11,12 @@ import { RobotPicker } from "../components/RobotPicker";
 import { JointPanel } from "../components/JointPanel";
 import { RobotViewer } from "../components/RobotViewer";
 import { LoadingOverlay } from "../components/LoadingOverlay";
+import { SignalPanel } from "../components/SignalPanel";
+import { useMechatronics } from "../lib/useMechatronics";
 
 export default function Page() {
   const r = useRobotSource();
+  const m = useMechatronics(r.robot, r.model);
   const [uploaded, setUploaded] = useState<{ label: string }[]>([]);
 
   async function handleFileList(list: FileList) {
@@ -56,11 +59,12 @@ export default function Page() {
           />
           <JointPanel
             model={r.model}
-            values={r.values}
-            onChange={r.onChange}
-            onReset={r.resetJoint}
-            onResetAll={r.resetAll}
+            values={m.targets}
+            onChange={m.setTarget}
+            onReset={(n) => m.setTarget(n, 0)}
+            onResetAll={m.home}
           />
+          <SignalPanel actuators={m.actuators} signals={m.signals} onHome={m.home} onStop={m.stop} />
           {r.error && (
             <p role="alert" className="rounded border border-red-500/30 bg-red-500/10 p-2 text-xs text-red-300">
               加载失败: {r.error.message}

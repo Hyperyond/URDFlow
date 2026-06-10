@@ -1,11 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   loadURDFFromURL,
   loadURDFFromFiles,
   getJointModel,
-  setJoint,
   type JointInfo,
   type URDFRobot,
   type URDFFileEntry,
@@ -16,6 +15,7 @@ type Source =
   | { kind: "preset"; url: string; label: string }
   | { kind: "files"; entries: URDFFileEntry[]; label: string };
 
+/** Owns robot loading (preset URL or uploaded files). FK/driving lives in useMechatronics. */
 export function useRobotSource() {
   const [source, setSource] = useState<Source>({
     kind: "preset",
@@ -23,20 +23,15 @@ export function useRobotSource() {
     label: PRESETS[0]!.name,
   });
   const [robot, setRobot] = useState<URDFRobot | null>(null);
-  // Ref mirror of `robot` so FK callbacks stay pure (no side effects in setState updaters).
-  const robotRef = useRef<URDFRobot | null>(null);
   const [model, setModel] = useState<JointInfo[]>([]);
-  const [values, setValues] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0); // 0..1
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
     let alive = true;
-    robotRef.current = null;
     setRobot(null);
     setModel([]);
-    setValues({});
     setError(null);
     setLoading(true);
     setProgress(0);
@@ -49,7 +44,6 @@ export function useRobotSource() {
         : loadURDFFromFiles(source.entries, { onProgress });
     p.then((r) => {
       if (!alive) return;
-      robotRef.current = r;
       setRobot(r);
       setModel(getJointModel(r));
       setLoading(false);
@@ -64,19 +58,6 @@ export function useRobotSource() {
     };
   }, [source]);
 
-  const onChange = useCallback((name: string, value: number) => {
-    if (robotRef.current) setJoint(robotRef.current, name, value);
-    setValues((v) => ({ ...v, [name]: value }));
-  }, []);
-
-  const resetJoint = useCallback((name: string) => onChange(name, 0), [onChange]);
-
-  const resetAll = useCallback(() => {
-    const r = robotRef.current;
-    if (r) model.forEach((j) => setJoint(r, j.name, 0));
-    setValues({});
-  }, [model]);
-
   const loadPreset = useCallback(
     (url: string, label: string) => setSource({ kind: "preset", url, label }),
     [],
@@ -86,18 +67,5 @@ export function useRobotSource() {
     [],
   );
 
-  return {
-    source,
-    robot,
-    model,
-    values,
-    loading,
-    progress,
-    error,
-    onChange,
-    resetJoint,
-    resetAll,
-    loadPreset,
-    loadFiles,
-  };
+  return { source, robot, model, loading, progress, error, loadPreset, loadFiles };
 }
