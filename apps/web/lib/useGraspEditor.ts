@@ -11,6 +11,9 @@ import {
   retargetTrajectory,
   toLeRobotFrames,
   solveIK,
+  findGripperJoints,
+  applyGripper,
+  type GripperJoint,
   type JointInfo,
   type URDFRobot,
   type Keyframe,
@@ -28,8 +31,8 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
 
   const eeLink = useMemo(() => (robot ? findEndEffectorLink(robot) : ""), [robot]);
   const jointNames = useMemo(() => model.map((m) => m.name), [model]);
+  const gripperJoints = useMemo<GripperJoint[]>(() => (robot ? findGripperJoints(robot) : []), [robot]);
   const duration = keyframes.length ? Math.max(...keyframes.map((k) => k.t)) : 0;
-  const currentPose = keyframes.length >= 2 ? interpolateKeyframes(keyframes, Math.min(playhead, duration)) : null;
 
   useEffect(() => {
     setKeyframes([]);
@@ -72,6 +75,7 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
         const nt = t + dt;
         const pose = interpolateKeyframes(keyframes, Math.min(nt, duration));
         solveIK(robot, eeLink, jointNames, pose.position, pose.quaternion, { iterations: 20, lambda: 0.08 });
+        applyGripper(robot, gripperJoints, pose.gripper);
         if (nt >= duration) {
           setIsPlaying(false);
           return duration;
@@ -82,7 +86,7 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [isPlaying, robot, keyframes, duration, eeLink, jointNames]);
+  }, [isPlaying, robot, keyframes, duration, eeLink, jointNames, gripperJoints]);
 
   const exportEpisode = useCallback(() => {
     if (!robot || keyframes.length < 2) return;
@@ -106,7 +110,6 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
       setIsPlaying(true);
     },
     pause: () => setIsPlaying(false),
-    currentPose,
     exportEpisode,
   };
 }

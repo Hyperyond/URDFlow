@@ -15,4 +15,6 @@ export type { Keyframe, EEPoseSample } from "./trajectory";
 export { retargetTrajectory, toLeRobotFrames } from "./retarget";
 export type { JointFrame, LeRobotFrame } from "./retarget";
 export { planGrasp, buildGraspTrajectory } from "./grasp";
-export type { GraspPlan, PlanGraspOptions } from "./grasp";
+export type { GraspPlan, PlanGraspOptions, GraspTrajectoryOptions } from "./grasp";
+export { findGripperJoints, applyGripper } from "./gripper";
+export type { GripperJoint } from "./gripper";

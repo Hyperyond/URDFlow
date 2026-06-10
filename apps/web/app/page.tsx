@@ -86,12 +86,7 @@ export default function Page() {
           )}
         </Sidebar>
         <main className="relative">
-          <RobotViewer
-            robot={r.robot}
-            boxPosition={ed.boxPosition}
-            onBoxMove={ed.setBoxPosition}
-            gripperPose={ed.currentPose}
-          />
+          <RobotViewer robot={r.robot} boxPosition={ed.boxPosition} onBoxMove={ed.setBoxPosition} />
           {r.loading && <LoadingOverlay progress={r.progress} />}
         </main>
       </div>
