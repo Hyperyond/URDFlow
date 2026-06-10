@@ -38,8 +38,8 @@ export function CaptureRig({ robot, frontCanvas, wristCanvas, every = 2 }: Captu
   useEffect(() => {
     frontCam.layers.set(CAPTURE_LAYER);
     wristCam.layers.set(CAPTURE_LAYER);
-    frontCam.position.set(0.7, 0.55, 0.7);
-    frontCam.lookAt(0, 0.2, 0);
+    frontCam.position.set(0.8, 0.8, 0.8);
+    frontCam.lookAt(0.05, 0.1, 0.05);
   }, [frontCam, wristCam]);
 
   // lights must also illuminate the capture layer, else the feed is black
@@ -79,9 +79,10 @@ export function CaptureRig({ robot, frontCanvas, wristCanvas, every = 2 }: Captu
     const link = robot.links[eeLink];
     if (link) {
       const p = link.getWorldPosition(new Vector3());
-      wristCam.position.set(p.x, p.y + 0.18, p.z);
-      wristCam.up.set(0, 0, -1); // down-looking camera needs a non-parallel up
-      wristCam.lookAt(p.x, p.y - 0.3, p.z);
+      // above & slightly behind the EE so the hand mesh doesn't fill/black out the frame
+      wristCam.position.set(p.x, p.y + 0.3, p.z + 0.18);
+      wristCam.up.set(0, 1, 0);
+      wristCam.lookAt(p.x, p.y - 0.02, p.z);
     }
 
     renderTo(frontCam, frontRT, frontCanvas.current);
