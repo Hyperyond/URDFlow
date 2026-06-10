@@ -6,3 +6,5 @@ export type { URDFRobot } from "urdf-loader";
 export { loadURDFFromFiles } from "./loadURDF";
 export type { URDFFileEntry } from "./types";
 export { buildFileMap, findURDF, resolveMeshRef, normalizePath, basename } from "./fileMap";
+export { createActuators, stepActuators, computeSignals } from "./mechatronics";
+export type { Actuator, JointSignal } from "./mechatronics";
