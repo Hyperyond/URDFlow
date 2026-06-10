@@ -45,7 +45,9 @@ export function RobotViewer({ robot, boxPosition, onBoxMove, captureRefs }: Robo
         <directionalLight position={[-5, 3, -4]} intensity={0.6} color="#9db4ff" />
 
         {robot && <primitive object={robot} />}
-        {captureRefs && <CaptureRig frontCanvas={captureRefs.front} topCanvas={captureRefs.top} />}
+        {captureRefs && (
+          <CaptureRig frontCanvas={captureRefs.front} topCanvas={captureRefs.top} boxPosition={boxPosition} />
+        )}
 
         {/* Draggable target box — user positions it, planGrasp aims for it. */}
         {boxPosition && (
