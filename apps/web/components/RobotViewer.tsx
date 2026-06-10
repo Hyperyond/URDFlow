@@ -3,27 +3,20 @@
 import { useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Grid, ContactShadows, TransformControls } from "@react-three/drei";
-import type { Object3D } from "three";
+import type { Mesh } from "three";
 import type { URDFRobot } from "@urdflow/urdf-web";
 
 export interface RobotViewerProps {
   robot: URDFRobot | null;
-  gizmoTarget?: Object3D;
-  onGizmoMove?: () => void;
+  boxPosition?: [number, number, number];
+  onBoxMove?: (p: [number, number, number]) => void;
 }
 
-export function RobotViewer({ robot, gizmoTarget, onGizmoMove }: RobotViewerProps) {
-  const [mode, setMode] = useState<"translate" | "rotate">("translate");
+export function RobotViewer({ robot, boxPosition, onBoxMove }: RobotViewerProps) {
+  // ref-callback into state so TransformControls mounts once the mesh exists
+  const [boxMesh, setBoxMesh] = useState<Mesh | null>(null);
   return (
     <div className="relative h-screen">
-      {gizmoTarget && (
-        <button
-          onClick={() => setMode((m) => (m === "translate" ? "rotate" : "translate"))}
-          className="absolute right-3 top-3 z-10 rounded bg-white/10 px-2 py-1 text-[11px] uppercase tracking-wider text-zinc-300 backdrop-blur"
-        >
-          {mode === "translate" ? "move" : "rotate"} · toggle
-        </button>
-      )}
       <Canvas camera={{ position: [1.3, 1.0, 1.3], fov: 50 }} style={{ height: "100vh", background: "#15171c" }}>
         {/* Studio-ish lighting: sky/ground fill + key + rim. No HDR/network dep. */}
         <hemisphereLight args={["#ffffff", "#3a3f4b", 1.0]} />
@@ -32,11 +25,24 @@ export function RobotViewer({ robot, gizmoTarget, onGizmoMove }: RobotViewerProp
         <directionalLight position={[-4, 3, -5]} intensity={0.5} />
 
         {robot && <primitive object={robot} />}
-        {gizmoTarget && (
-          <>
-            <primitive object={gizmoTarget} />
-            <TransformControls object={gizmoTarget} mode={mode} size={0.7} onObjectChange={() => onGizmoMove?.()} />
-          </>
+
+        {/* Draggable target box — user positions it, planGrasp aims for it. */}
+        {boxPosition && (
+          <mesh ref={setBoxMesh} position={boxPosition}>
+            <boxGeometry args={[0.05, 0.05, 0.05]} />
+            <meshStandardMaterial color="#22d3ee" emissive="#0e7490" emissiveIntensity={0.4} />
+          </mesh>
+        )}
+        {boxMesh && boxPosition && (
+          <TransformControls
+            object={boxMesh}
+            mode="translate"
+            size={0.6}
+            onObjectChange={() => {
+              const p = boxMesh.position;
+              onBoxMove?.([p.x, p.y, p.z]);
+            }}
+          />
         )}
 
         {/* Fake contact shadow grounds the arm without per-mesh shadow flags. */}

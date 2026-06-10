@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRobotSource } from "../lib/useRobotSource";
-import { useKeyframeEditor } from "../lib/useKeyframeEditor";
+import { useGraspEditor } from "../lib/useGraspEditor";
 import { entriesFromFileList, entriesFromZip, entriesFromDataTransfer } from "../lib/fileInput";
 import { PRESETS } from "../lib/presets";
 import { Header } from "../components/Header";
@@ -15,7 +15,7 @@ import { LoadingOverlay } from "../components/LoadingOverlay";
 
 export default function Page() {
   const r = useRobotSource();
-  const ed = useKeyframeEditor(r.robot, r.model);
+  const ed = useGraspEditor(r.robot, r.model);
   const [uploaded, setUploaded] = useState<{ label: string }[]>([]);
 
   async function handleFileList(list: FileList) {
@@ -56,13 +56,25 @@ export default function Page() {
             activeLabel={r.source.label}
             onPick={(p) => r.loadPreset(p.url, p.name)}
           />
+          <button
+            onClick={ed.generateGrasp}
+            disabled={!r.robot}
+            className="rounded bg-cyan-500/15 px-3 py-2 text-xs font-medium text-cyan-300 transition-colors hover:bg-cyan-500/25 disabled:opacity-40"
+          >
+            ⚡ 生成抓取轨迹
+          </button>
+          {ed.error && (
+            <p role="alert" className="rounded border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-300">
+              {ed.error}
+            </p>
+          )}
           <TimelinePanel
             keyframes={ed.keyframes}
             playhead={ed.playhead}
             duration={ed.duration}
             isPlaying={ed.isPlaying}
-            onAddKeyframe={ed.addKeyframe}
-            onRemoveKeyframe={ed.removeKeyframe}
+            onAddKeyframe={ed.generateGrasp}
+            onRemoveKeyframe={() => {}}
             onPlay={ed.play}
             onPause={ed.pause}
             onExport={ed.exportEpisode}
@@ -74,7 +86,7 @@ export default function Page() {
           )}
         </Sidebar>
         <main className="relative">
-          <RobotViewer robot={r.robot} gizmoTarget={ed.gizmoTarget} onGizmoMove={ed.onGizmoMove} />
+          <RobotViewer robot={r.robot} boxPosition={ed.boxPosition} onBoxMove={ed.setBoxPosition} />
           {r.loading && <LoadingOverlay progress={r.progress} />}
         </main>
       </div>

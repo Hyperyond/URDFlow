@@ -1,67 +1,54 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Object3D, Vector3, Quaternion } from "three";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   findEndEffectorLink,
-  solveIK,
+  planGrasp,
+  buildGraspTrajectory,
   interpolateKeyframes,
   sampleTrajectory,
   retargetTrajectory,
   toLeRobotFrames,
+  solveIK,
   type JointInfo,
   type URDFRobot,
   type Keyframe,
 } from "@urdflow/urdf-web";
 import { downloadJSON } from "./download";
 
-export function useKeyframeEditor(robot: URDFRobot | null, model: JointInfo[]) {
-  const gizmoTarget = useRef(new Object3D());
+const smooth = (u: number) => u * u * (3 - 2 * u);
+
+export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
+  const [boxPosition, setBoxPosition] = useState<[number, number, number]>([0.3, 0.2, 0.3]);
   const [keyframes, setKeyframes] = useState<Keyframe[]>([]);
   const [playhead, setPlayhead] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [gripper, setGripper] = useState(0);
+  const [error, setError] = useState<string | null>(null);
 
   const eeLink = useMemo(() => (robot ? findEndEffectorLink(robot) : ""), [robot]);
   const jointNames = useMemo(() => model.map((m) => m.name), [model]);
   const duration = keyframes.length ? Math.max(...keyframes.map((k) => k.t)) : 0;
 
-  // place gizmo at the robot's current EE pose when a robot loads
   useEffect(() => {
-    if (!robot) return;
-    robot.updateMatrixWorld(true);
-    const link = robot.links[eeLink];
-    if (!link) return;
-    gizmoTarget.current.position.copy(link.getWorldPosition(new Vector3()));
-    gizmoTarget.current.quaternion.copy(link.getWorldQuaternion(new Quaternion()));
     setKeyframes([]);
     setPlayhead(0);
     setIsPlaying(false);
-  }, [robot, eeLink]);
+    setError(null);
+  }, [robot]);
 
-  // gizmo dragged → real-time IK so the robot follows the target (所见即所得)
-  const onGizmoMove = useCallback(() => {
+  const generateGrasp = useCallback(() => {
     if (!robot) return;
-    const p = gizmoTarget.current.position;
-    const q = gizmoTarget.current.quaternion;
-    solveIK(robot, eeLink, jointNames, [p.x, p.y, p.z], [q.x, q.y, q.z, q.w], { iterations: 20, lambda: 0.08 });
-  }, [robot, eeLink, jointNames]);
+    const plan = planGrasp(robot, eeLink, jointNames, boxPosition, { candidates: 32, reachThreshold: 0.04 });
+    if (!plan) {
+      setError("目标不可达(超出工作空间),把方块拖近一点再试");
+      setKeyframes([]);
+      return;
+    }
+    setError(null);
+    setKeyframes(buildGraspTrajectory(plan));
+    setPlayhead(0);
+  }, [robot, eeLink, jointNames, boxPosition]);
 
-  const addKeyframe = useCallback(() => {
-    const p = gizmoTarget.current.position;
-    const q = gizmoTarget.current.quaternion;
-    setKeyframes((kfs) => {
-      const t = kfs.length ? Math.max(...kfs.map((k) => k.t)) + 1 : 0;
-      return [...kfs, { t, position: [p.x, p.y, p.z], quaternion: [q.x, q.y, q.z, q.w], gripper }];
-    });
-  }, [gripper]);
-
-  const removeKeyframe = useCallback(
-    (i: number) => setKeyframes((kfs) => kfs.filter((_, idx) => idx !== i)),
-    [],
-  );
-
-  // playback: RAF advances playhead, interpolate → IK → drive twin
   useEffect(() => {
     if (!isPlaying || !robot || keyframes.length < 2) return;
     let raf = 0;
@@ -87,25 +74,23 @@ export function useKeyframeEditor(robot: URDFRobot | null, model: JointInfo[]) {
 
   const exportEpisode = useCallback(() => {
     if (!robot || keyframes.length < 2) return;
-    const samples = sampleTrajectory(keyframes, 30);
+    const samples = sampleTrajectory(keyframes, 30, smooth);
     const jointFrames = retargetTrajectory(robot, eeLink, jointNames, samples, { iterations: 30, lambda: 0.06 });
     const frames = toLeRobotFrames(jointFrames, jointNames, 0);
-    downloadJSON("episode_0.json", { jointNames: [...jointNames, "gripper"], frames });
+    downloadJSON("grasp_episode_0.json", { jointNames: [...jointNames, "gripper"], frames });
   }, [robot, eeLink, jointNames, keyframes]);
 
   return {
-    gizmoTarget: gizmoTarget.current,
-    onGizmoMove,
+    boxPosition,
+    setBoxPosition,
+    generateGrasp,
     keyframes,
-    addKeyframe,
-    removeKeyframe,
+    error,
     playhead,
     duration,
     isPlaying,
     play: () => setIsPlaying(true),
     pause: () => setIsPlaying(false),
-    gripper,
-    setGripper,
     exportEpisode,
   };
 }
