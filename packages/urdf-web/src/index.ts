@@ -3,3 +3,6 @@ export { getJointModel, setJoint } from "./joints";
 export { applyZUpToYUp } from "./coordinates";
 export type { JointInfo, URDFJointType, LoadURDFOptions } from "./types";
 export type { URDFRobot } from "urdf-loader";
+export { loadURDFFromFiles } from "./loadURDF";
+export type { URDFFileEntry } from "./types";
+export { buildFileMap, findURDF, resolveMeshRef, normalizePath, basename } from "./fileMap";

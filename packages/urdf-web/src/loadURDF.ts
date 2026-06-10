@@ -3,10 +3,19 @@ import type { URDFRobot } from "urdf-loader";
 import { LoadingManager } from "three";
 import type { LoadURDFOptions } from "./types";
 import { applyZUpToYUp } from "./coordinates";
+import { buildFileMap, findURDF } from "./fileMap";
+import { createFileMeshLoader } from "./meshLoader";
+import type { URDFFileEntry } from "./types";
 
 function makeLoader(options: LoadURDFOptions): URDFLoader {
-  const loader = new URDFLoader(new LoadingManager());
-  if (options.packages !== undefined) loader.packages = options.packages;
+  const manager = new LoadingManager();
+  if (options.onProgress) {
+    manager.onProgress = (_url, loaded, total) => options.onProgress!(loaded, total);
+  }
+  const loader = new URDFLoader(manager);
+  // urdf-loader's `packages` accepts string | map | resolver fn at runtime;
+  // its bundled types are narrower, so cast the assignment.
+  if (options.packages !== undefined) loader.packages = options.packages as never;
   if (options.loadMeshCb !== undefined) loader.loadMeshCb = options.loadMeshCb;
   return loader;
 }
@@ -36,5 +45,22 @@ export function loadURDFFromURL(
       undefined,
       (err) => reject(err),
     );
+  });
+}
+
+const td = new TextDecoder();
+
+/** Load a robot from uploaded in-memory files (folder/zip). Resolves mesh refs locally. */
+export async function loadURDFFromFiles(
+  entries: URDFFileEntry[],
+  options: LoadURDFOptions & { urdfPath?: string } = {},
+): Promise<URDFRobot> {
+  const urdfEntry = findURDF(entries, options.urdfPath);
+  const fm = buildFileMap(entries);
+  const text = td.decode(urdfEntry.data);
+  return loadURDFFromString(text, {
+    ...options,
+    packages: () => "",
+    loadMeshCb: options.loadMeshCb ?? createFileMeshLoader(fm),
   });
 }
