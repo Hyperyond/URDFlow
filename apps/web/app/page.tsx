@@ -2,21 +2,20 @@
 
 import { useEffect, useState } from "react";
 import { useRobotSource } from "../lib/useRobotSource";
+import { useKeyframeEditor } from "../lib/useKeyframeEditor";
 import { entriesFromFileList, entriesFromZip, entriesFromDataTransfer } from "../lib/fileInput";
 import { PRESETS } from "../lib/presets";
 import { Header } from "../components/Header";
 import { Sidebar } from "../components/Sidebar";
 import { ImportPanel } from "../components/ImportPanel";
 import { RobotPicker } from "../components/RobotPicker";
-import { JointPanel } from "../components/JointPanel";
+import { TimelinePanel } from "../components/TimelinePanel";
 import { RobotViewer } from "../components/RobotViewer";
 import { LoadingOverlay } from "../components/LoadingOverlay";
-import { SignalPanel } from "../components/SignalPanel";
-import { useMechatronics } from "../lib/useMechatronics";
 
 export default function Page() {
   const r = useRobotSource();
-  const m = useMechatronics(r.robot, r.model);
+  const ed = useKeyframeEditor(r.robot, r.model);
   const [uploaded, setUploaded] = useState<{ label: string }[]>([]);
 
   async function handleFileList(list: FileList) {
@@ -57,14 +56,17 @@ export default function Page() {
             activeLabel={r.source.label}
             onPick={(p) => r.loadPreset(p.url, p.name)}
           />
-          <JointPanel
-            model={r.model}
-            values={m.targets}
-            onChange={m.setTarget}
-            onReset={(n) => m.setTarget(n, 0)}
-            onResetAll={m.home}
+          <TimelinePanel
+            keyframes={ed.keyframes}
+            playhead={ed.playhead}
+            duration={ed.duration}
+            isPlaying={ed.isPlaying}
+            onAddKeyframe={ed.addKeyframe}
+            onRemoveKeyframe={ed.removeKeyframe}
+            onPlay={ed.play}
+            onPause={ed.pause}
+            onExport={ed.exportEpisode}
           />
-          <SignalPanel actuators={m.actuators} signals={m.signals} onHome={m.home} onStop={m.stop} />
           {r.error && (
             <p role="alert" className="rounded border border-red-500/30 bg-red-500/10 p-2 text-xs text-red-300">
               加载失败: {r.error.message}
@@ -72,7 +74,7 @@ export default function Page() {
           )}
         </Sidebar>
         <main className="relative">
-          <RobotViewer robot={r.robot} />
+          <RobotViewer robot={r.robot} gizmoTarget={ed.gizmoTarget} onGizmoMove={ed.onGizmoMove} />
           {r.loading && <LoadingOverlay progress={r.progress} />}
         </main>
       </div>
