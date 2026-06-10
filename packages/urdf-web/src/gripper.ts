@@ -6,7 +6,7 @@ export interface GripperJoint {
   upper: number;
 }
 
-const GRIPPER_RE = /finger|gripper|claw|hand/i;
+const GRIPPER_RE = /finger|gripper|claw|hand|clamp|jaw/i;
 
 /** Find the robot's own gripper joints (prismatic/revolute named finger/gripper/...). */
 export function findGripperJoints(robot: URDFRobot): GripperJoint[] {

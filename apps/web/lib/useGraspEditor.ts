@@ -37,8 +37,12 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
   const [error, setError] = useState<string | null>(null);
 
   const eeLink = useMemo(() => (robot ? findEndEffectorLink(robot) : ""), [robot]);
-  const jointNames = useMemo(() => model.map((m) => m.name), [model]);
   const gripperJoints = useMemo<GripperJoint[]>(() => (robot ? findGripperJoints(robot) : []), [robot]);
+  // arm joints only — gripper joints are driven separately, not used to reach the target
+  const jointNames = useMemo(() => {
+    const grip = new Set(gripperJoints.map((g) => g.name));
+    return model.map((m) => m.name).filter((n) => !grip.has(n));
+  }, [model, gripperJoints]);
   const duration = keyframes.length ? Math.max(...keyframes.map((k) => k.t)) : 0;
 
   useEffect(() => {
