@@ -55,7 +55,11 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
       setError("先在左侧 Scene 添加一个正方体");
       return;
     }
-    const plan = planGrasp(robot, eeLink, jointNames, cube.position, { candidates: 32, reachThreshold: 0.04 });
+    const plan = planGrasp(robot, eeLink, jointNames, cube.position, {
+      candidates: 36,
+      reachThreshold: 0.05,
+      approachWeight: 1.2, // softer top-down so it can reach out & slant-grasp ground objects
+    });
     if (!plan) {
       setError("目标不可达(超出工作空间),把正方体拖近一点再试");
       setKeyframes([]);
@@ -141,13 +145,13 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
         // on the table top (~y=0.225) in front of the base — comfortable top-down reach
         return [
           ...o,
-          { id, position: [0.42 + (n % 3) * 0.09, 0.225, -0.08 + Math.floor(n / 3) * 0.09] as [number, number, number] },
+          { id, position: [0.42 + (n % 3) * 0.09, 0.025, -0.08 + Math.floor(n / 3) * 0.09] as [number, number, number] },
         ];
       });
       setSelectedId(id);
     },
     addTarget: () => {
-      setTarget([0.5, 0.226, 0.16]);
+      setTarget([0.5, 0.026, 0.16]);
       setSelectedId("target");
     },
     removeObject: (id: string) => setObjects((o) => o.filter((x) => x.id !== id)),
