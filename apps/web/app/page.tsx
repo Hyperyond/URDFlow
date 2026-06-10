@@ -5,11 +5,10 @@ import { useRobotSource } from "../lib/useRobotSource";
 import { useGraspEditor } from "../lib/useGraspEditor";
 import { entriesFromFileList, entriesFromZip, entriesFromDataTransfer } from "../lib/fileInput";
 import { PRESETS } from "../lib/presets";
-import { Header } from "../components/Header";
-import { Sidebar } from "../components/Sidebar";
-import { ImportPanel } from "../components/ImportPanel";
-import { RobotPicker } from "../components/RobotPicker";
-import { TimelinePanel } from "../components/TimelinePanel";
+import { MenuBar } from "../components/MenuBar";
+import { SceneOutliner, type SceneNode } from "../components/SceneOutliner";
+import { CameraPanel } from "../components/CameraPanel";
+import { Timeline } from "../components/Timeline";
 import { RobotViewer } from "../components/RobotViewer";
 import { LoadingOverlay } from "../components/LoadingOverlay";
 
@@ -44,52 +43,57 @@ export default function Page() {
     };
   }, [r.loadFiles]);
 
+  const sceneNodes: SceneNode[] = [
+    { id: "robot", label: r.source.label || "robot", icon: "🤖" },
+    { id: "box", label: "Target box", icon: "◼" },
+    { id: "cam-front", label: "Camera · front", icon: "🎥" },
+    { id: "cam-wrist", label: "Camera · wrist", icon: "🎥" },
+    { id: "grid", label: "Grid", icon: "▦" },
+    { id: "lights", label: "Lights", icon: "✦" },
+  ];
+
   return (
-    <div className="grid h-screen grid-rows-[auto_1fr]">
-      <Header robotLabel={r.source.label} />
-      <div className="grid grid-cols-[auto_1fr] overflow-hidden">
-        <Sidebar>
-          <ImportPanel onPickFiles={handleFileList} onPickZip={handleZip} busy={r.loading} />
-          <RobotPicker
-            presets={PRESETS}
-            uploaded={uploaded}
-            activeLabel={r.source.label}
-            onPick={(p) => r.loadPreset(p.url, p.name)}
-          />
-          <button
-            onClick={ed.generateGrasp}
-            disabled={!r.robot}
-            className="rounded bg-cyan-500/15 px-3 py-2 text-xs font-medium text-cyan-300 transition-colors hover:bg-cyan-500/25 disabled:opacity-40"
-          >
-            ⚡ 生成抓取轨迹
-          </button>
-          {ed.error && (
-            <p role="alert" className="rounded border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-300">
-              {ed.error}
-            </p>
-          )}
-          <TimelinePanel
-            keyframes={ed.keyframes}
-            playhead={ed.playhead}
-            duration={ed.duration}
-            isPlaying={ed.isPlaying}
-            onAddKeyframe={ed.generateGrasp}
-            onRemoveKeyframe={() => {}}
-            onPlay={ed.play}
-            onPause={ed.pause}
-            onExport={ed.exportEpisode}
-          />
-          {r.error && (
-            <p role="alert" className="rounded border border-red-500/30 bg-red-500/10 p-2 text-xs text-red-300">
-              加载失败: {r.error.message}
-            </p>
-          )}
-        </Sidebar>
+    <div className="grid h-screen grid-rows-[auto_1fr_auto] bg-[#0a0b0d]">
+      <MenuBar
+        robotLabel={r.source.label}
+        presets={PRESETS}
+        uploaded={uploaded}
+        onPickPreset={(p) => r.loadPreset(p.url, p.name)}
+        onPickFiles={handleFileList}
+        onPickZip={handleZip}
+      />
+      <div className="grid grid-cols-[auto_1fr_auto] overflow-hidden">
+        <SceneOutliner nodes={sceneNodes} />
         <main className="relative">
           <RobotViewer robot={r.robot} boxPosition={ed.boxPosition} onBoxMove={ed.setBoxPosition} />
           {r.loading && <LoadingOverlay progress={r.progress} />}
+          {r.error && (
+            <div className="absolute left-3 top-3 rounded border border-red-500/30 bg-red-500/10 px-2 py-1 text-xs text-red-300">
+              加载失败: {r.error.message}
+            </div>
+          )}
+          {ed.error && (
+            <div className="absolute bottom-3 left-3 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs text-amber-300">
+              {ed.error}
+            </div>
+          )}
         </main>
+        <CameraPanel />
       </div>
+      <Timeline
+        keyframes={ed.keyframes}
+        playhead={ed.playhead}
+        duration={ed.duration}
+        isPlaying={ed.isPlaying}
+        isRecording={ed.isRecording}
+        loop={ed.loop}
+        onRecord={ed.toggleRecord}
+        onPlay={ed.play}
+        onPause={ed.pause}
+        onStop={ed.stop}
+        onToggleLoop={ed.toggleLoop}
+        onExport={ed.exportEpisode}
+      />
     </div>
   );
 }

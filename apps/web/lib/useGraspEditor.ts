@@ -27,6 +27,8 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
   const [keyframes, setKeyframes] = useState<Keyframe[]>([]);
   const [playhead, setPlayhead] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [loop, setLoop] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const eeLink = useMemo(() => (robot ? findEndEffectorLink(robot) : ""), [robot]);
@@ -68,7 +70,7 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     if (!isPlaying || !robot || keyframes.length < 2) return;
     let raf = 0;
     let last = performance.now();
-    const loop = (now: number) => {
+    const tick = (now: number) => {
       const dt = (now - last) / 1000;
       last = now;
       setPlayhead((t) => {
@@ -77,16 +79,17 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
         solveIK(robot, eeLink, jointNames, pose.position, pose.quaternion, { iterations: 20, lambda: 0.08 });
         applyGripper(robot, gripperJoints, pose.gripper);
         if (nt >= duration) {
+          if (loop) return 0; // restart, keep playing
           setIsPlaying(false);
           return duration;
         }
         return nt;
       });
-      raf = requestAnimationFrame(loop);
+      raf = requestAnimationFrame(tick);
     };
-    raf = requestAnimationFrame(loop);
+    raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [isPlaying, robot, keyframes, duration, eeLink, jointNames, gripperJoints]);
+  }, [isPlaying, robot, keyframes, duration, eeLink, jointNames, gripperJoints, loop]);
 
   const exportEpisode = useCallback(() => {
     if (!robot || keyframes.length < 2) return;
@@ -106,10 +109,22 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     duration,
     isPlaying,
     play: () => {
+      if (keyframes.length < 2) {
+        generateGrasp(); // auto-plan + auto-play — no manual generate step
+        return;
+      }
       setPlayhead((t) => (t >= duration ? 0 : t)); // restart if parked at the end
       setIsPlaying(true);
     },
     pause: () => setIsPlaying(false),
+    stop: () => {
+      setIsPlaying(false);
+      setPlayhead(0);
+    },
+    loop,
+    toggleLoop: () => setLoop((l) => !l),
+    isRecording,
+    toggleRecord: () => setIsRecording((v) => !v),
     exportEpisode,
   };
 }

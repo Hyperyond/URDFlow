@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Canvas } from "@react-three/fiber";
-import { OrbitControls, Grid, ContactShadows, TransformControls } from "@react-three/drei";
+import { OrbitControls, Grid, ContactShadows, TransformControls, GizmoHelper, GizmoViewport } from "@react-three/drei";
 import { ACESFilmicToneMapping, type Mesh } from "three";
 import type { URDFRobot } from "@urdflow/urdf-web";
 
@@ -17,11 +17,11 @@ export function RobotViewer({ robot, boxPosition, onBoxMove }: RobotViewerProps)
   const [boxMesh, setBoxMesh] = useState<Mesh | null>(null);
 
   return (
-    <div className="relative h-screen">
+    <div className="relative h-full w-full">
       <Canvas
         camera={{ position: [1.4, 1.1, 1.4], fov: 50 }}
         gl={{ toneMapping: ACESFilmicToneMapping, toneMappingExposure: 1.15, antialias: true }}
-        style={{ height: "100vh", background: "#14171d" }}
+        style={{ height: "100%", width: "100%", background: "#14171d" }}
       >
         {/* sky/ground fill + warm key + cool rim — brighter, no shadow-map (kept simple) */}
         <hemisphereLight args={["#eaf0ff", "#2a2f38", 1.1]} />
@@ -60,6 +60,10 @@ export function RobotViewer({ robot, boxPosition, onBoxMove }: RobotViewerProps)
           fadeStrength={1.6}
           infiniteGrid
         />
+        {/* PlayCanvas/Blender-style orientation gizmo (东南西北) */}
+        <GizmoHelper alignment="top-right" margin={[64, 64]}>
+          <GizmoViewport axisColors={["#ef4444", "#22c55e", "#3b82f6"]} labelColor="#e5e7eb" />
+        </GizmoHelper>
         <OrbitControls makeDefault target={[0, 0.45, 0]} minDistance={0.6} maxDistance={6} />
       </Canvas>
     </div>
