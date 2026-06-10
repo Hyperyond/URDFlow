@@ -23,7 +23,7 @@ import { downloadJSON } from "./download";
 const smooth = (u: number) => u * u * (3 - 2 * u);
 
 export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
-  const [boxPosition, setBoxPosition] = useState<[number, number, number]>([0.3, 0.06, 0.3]);
+  const [boxPosition, setBoxPosition] = useState<[number, number, number]>([0.3, 0.25, 0.3]);
   const [keyframes, setKeyframes] = useState<Keyframe[]>([]);
   const [playhead, setPlayhead] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -44,6 +44,22 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     setIsPlaying(false);
     setError(null);
   }, [robot]);
+
+  // drop the target box onto the table once (gravity feel); it then rests on the surface
+  useEffect(() => {
+    const TABLE = 0.025; // box half-height on a table whose top is ~y=0
+    let raf = 0;
+    let v = 0;
+    let y = 0.25;
+    const drop = () => {
+      v += 0.0012;
+      y = Math.max(TABLE, y - v);
+      setBoxPosition((p) => [p[0], y, p[2]]);
+      if (y > TABLE) raf = requestAnimationFrame(drop);
+    };
+    raf = requestAnimationFrame(drop);
+    return () => cancelAnimationFrame(raf);
+  }, []);
 
   const generateGrasp = useCallback(() => {
     if (!robot) return;

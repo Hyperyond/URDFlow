@@ -78,6 +78,7 @@ export function RobotViewer({ robot, boxPosition, onBoxMove, captureRefs }: Robo
             object={boxMesh}
             mode="translate"
             size={0.6}
+            showY={false} /* keep the box on the table plane; drag only in X/Z */
             onObjectChange={() => {
               const p = boxMesh.position;
               onBoxMove?.([p.x, p.y, p.z]);
