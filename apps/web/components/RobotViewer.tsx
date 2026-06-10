@@ -36,10 +36,11 @@ export function RobotViewer({ robot, boxPosition, onBoxMove, captureRefs }: Robo
       <Canvas
         camera={{ position: [1.4, 1.1, 1.4], fov: 50 }}
         gl={{ toneMapping: ACESFilmicToneMapping, toneMappingExposure: 1.15, antialias: true }}
-        style={{ height: "100%", width: "100%", background: "#1b1f27" }}
+        style={{ height: "100%", width: "100%", background: "#e9ecef" }}
       >
-        {/* sky/ground fill + warm key + cool rim — brighter, no shadow-map (kept simple) */}
-        <hemisphereLight args={["#eaf0ff", "#2a2f38", 1.1]} />
+        <color attach="background" args={["#e9ecef"]} />
+        {/* sky/ground fill + warm key + cool rim, tuned for a white set */}
+        <hemisphereLight args={["#ffffff", "#c4c9d2", 1.0]} />
         <ambientLight intensity={0.35} />
         <directionalLight position={[5, 8, 4]} intensity={1.8} color="#fff4e6" />
         <directionalLight position={[-5, 3, -4]} intensity={0.6} color="#9db4ff" />
@@ -72,13 +73,13 @@ export function RobotViewer({ robot, boxPosition, onBoxMove, captureRefs }: Robo
         {/* capture-only matte ground (layer 1) so cameras see a real floor, not the grid */}
         <mesh ref={groundRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
           <planeGeometry args={[20, 20]} />
-          <meshStandardMaterial color="#1a1d24" roughness={1} metalness={0} />
+          <meshStandardMaterial color="#eceef1" roughness={1} metalness={0} />
         </mesh>
         <ContactShadows position={[0, 0.001, 0]} opacity={0.5} scale={5} blur={2.6} far={3} />
         <Grid
           args={[10, 10]}
-          cellColor="#262a33"
-          sectionColor="#3a4150"
+          cellColor="#c8ccd2"
+          sectionColor="#aab0ba"
           fadeDistance={20}
           fadeStrength={1.6}
           infiniteGrid
