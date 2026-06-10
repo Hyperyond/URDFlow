@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type RefObject } from "react";
+import { useState, useEffect, useRef, type RefObject } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Grid, ContactShadows, TransformControls, GizmoHelper, GizmoViewport } from "@react-three/drei";
 import { ACESFilmicToneMapping, type Mesh } from "three";
@@ -17,6 +17,19 @@ export interface RobotViewerProps {
 export function RobotViewer({ robot, boxPosition, onBoxMove, captureRefs }: RobotViewerProps) {
   // ref-callback into state so TransformControls mounts once the mesh exists
   const [boxMesh, setBoxMesh] = useState<Mesh | null>(null);
+  const groundRef = useRef<Mesh>(null);
+
+  // Layer 1 = "capture" layer the front/wrist cameras render (real-looking scene,
+  // no editor helpers). Robot + box live on both layers; the matte ground is capture-only.
+  useEffect(() => {
+    robot?.traverse((o) => o.layers.enable(1));
+  }, [robot]);
+  useEffect(() => {
+    boxMesh?.layers.enable(1);
+  }, [boxMesh]);
+  useEffect(() => {
+    groundRef.current?.layers.set(1);
+  }, []);
 
   return (
     <div className="relative h-full w-full">
@@ -56,6 +69,11 @@ export function RobotViewer({ robot, boxPosition, onBoxMove, captureRefs }: Robo
         )}
 
         {/* Soft fake contact shadow grounds the arm without a solid ground plane. */}
+        {/* capture-only matte ground (layer 1) so cameras see a real floor, not the grid */}
+        <mesh ref={groundRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
+          <planeGeometry args={[20, 20]} />
+          <meshStandardMaterial color="#1a1d24" roughness={1} metalness={0} />
+        </mesh>
         <ContactShadows position={[0, 0.001, 0]} opacity={0.5} scale={5} blur={2.6} far={3} />
         <Grid
           args={[10, 10]}
