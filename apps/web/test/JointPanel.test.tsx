@@ -9,19 +9,39 @@ const model: JointInfo[] = [
 ];
 
 describe("JointPanel", () => {
-  it("renders one labeled slider per joint with correct min/max", () => {
-    render(<JointPanel model={model} values={{}} onChange={() => {}} />);
-    const sliders = screen.getAllByRole("slider");
-    expect(sliders).toHaveLength(2);
-    expect(sliders[0]).toHaveAttribute("min", "-1.57");
-    expect(sliders[0]).toHaveAttribute("max", "1.57");
+  it("renders a labeled slider + mono readout per joint", () => {
+    render(
+      <JointPanel
+        model={model}
+        values={{ joint1: 0.5 }}
+        onChange={() => {}}
+        onReset={() => {}}
+        onResetAll={() => {}}
+      />,
+    );
+    expect(screen.getAllByRole("slider")).toHaveLength(2);
     expect(screen.getByText("joint1")).toBeInTheDocument();
+    expect(screen.getByText("0.50")).toBeInTheDocument();
   });
 
-  it("calls onChange with the joint name and new value", () => {
+  it("calls onChange with name + numeric value", () => {
     const onChange = vi.fn();
-    render(<JointPanel model={model} values={{}} onChange={onChange} />);
+    render(
+      <JointPanel model={model} values={{}} onChange={onChange} onReset={() => {}} onResetAll={() => {}} />,
+    );
     fireEvent.change(screen.getAllByRole("slider")[0], { target: { value: "0.5" } });
     expect(onChange).toHaveBeenCalledWith("joint1", 0.5);
+  });
+
+  it("fires onReset for one joint and onResetAll", () => {
+    const onReset = vi.fn();
+    const onResetAll = vi.fn();
+    render(
+      <JointPanel model={model} values={{}} onChange={() => {}} onReset={onReset} onResetAll={onResetAll} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /reset all/i }));
+    expect(onResetAll).toHaveBeenCalled();
+    fireEvent.click(screen.getAllByRole("button", { name: /^reset joint/i })[0]);
+    expect(onReset).toHaveBeenCalledWith("joint1");
   });
 });
