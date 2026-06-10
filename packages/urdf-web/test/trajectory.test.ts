@@ -27,3 +27,12 @@ describe("sampleTrajectory", () => {
     expect(frames[5]!.position[0]).toBeCloseTo(1, 1);
   });
 });
+
+describe("sampleTrajectory easing", () => {
+  it("eased sampling slows at the ends (smoothstep)", () => {
+    const smooth = (u: number) => u * u * (3 - 2 * u);
+    const frames = sampleTrajectory(kfs, 10, smooth);
+    // at i=2 (u=0.2), eased x < linear 0.4 (kfs span 0→2 in x)
+    expect(frames[2]!.position[0]).toBeLessThan(0.4);
+  });
+});

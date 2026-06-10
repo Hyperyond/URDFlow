@@ -40,13 +40,17 @@ export function interpolateKeyframes(kfs: Keyframe[], t: number): EEPoseSample {
 }
 
 /** Sample the keyframe span at fps Hz (inclusive of both ends). */
-export function sampleTrajectory(kfs: Keyframe[], fps: number): EEPoseSample[] {
+export function sampleTrajectory(
+  kfs: Keyframe[],
+  fps: number,
+  easing: (u: number) => number = (u) => u,
+): EEPoseSample[] {
   if (kfs.length === 0) return [];
   const sorted = [...kfs].sort((a, b) => a.t - b.t);
   const t0 = sorted[0]!.t;
   const t1 = sorted[sorted.length - 1]!.t;
   const n = Math.max(1, Math.round((t1 - t0) * fps));
   const out: EEPoseSample[] = [];
-  for (let i = 0; i <= n; i++) out.push(interpolateKeyframes(sorted, t0 + ((t1 - t0) * i) / n));
+  for (let i = 0; i <= n; i++) out.push(interpolateKeyframes(sorted, t0 + (t1 - t0) * easing(i / n)));
   return out;
 }

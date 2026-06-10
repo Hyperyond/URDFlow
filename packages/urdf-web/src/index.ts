@@ -14,3 +14,5 @@ export { interpolateKeyframes, sampleTrajectory } from "./trajectory";
 export type { Keyframe, EEPoseSample } from "./trajectory";
 export { retargetTrajectory, toLeRobotFrames } from "./retarget";
 export type { JointFrame, LeRobotFrame } from "./retarget";
+export { planGrasp, buildGraspTrajectory } from "./grasp";
+export type { GraspPlan, PlanGraspOptions } from "./grasp";
