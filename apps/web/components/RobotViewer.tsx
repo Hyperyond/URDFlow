@@ -16,8 +16,6 @@ import { ACESFilmicToneMapping, Box3, type Mesh } from "three";
 import type { URDFRobot } from "@urdflow/urdf-web";
 import { CaptureRig } from "./CaptureRig";
 
-const PEDESTAL_H = 0.3; // robot base height above the ground (mounted on a pedestal)
-
 export interface SceneObj {
   id: string;
   position: [number, number, number];
@@ -108,8 +106,7 @@ export function RobotViewer({
     robot?.traverse((o) => o.layers.enable(1));
   }, [robot]);
 
-  // mount the robot on a pedestal: lift so its base sits on top (~0.3m), giving a
-  // comfortable top-down reach onto ground objects (no crumple, no floor clipping)
+  // sit the robot on the ground: lift so its lowest point rests on y=0 (no floor clipping)
   useEffect(() => {
     if (!robot) {
       setRobotY(0);
@@ -118,7 +115,7 @@ export function RobotViewer({
     const fit = () => {
       robot.updateMatrixWorld(true);
       const b = new Box3().setFromObject(robot);
-      if (Number.isFinite(b.min.y)) setRobotY(PEDESTAL_H - b.min.y);
+      if (Number.isFinite(b.min.y)) setRobotY(-Math.min(0, b.min.y));
     };
     fit();
     const t = setTimeout(fit, 200); // re-fit after async meshes finish loading
@@ -183,16 +180,6 @@ export function RobotViewer({
         <mesh ref={(m) => m?.layers.enable(1)} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
           <planeGeometry args={[8, 8]} />
           <meshStandardMaterial color="#d4d7db" roughness={0.85} metalness={0} />
-        </mesh>
-        {/* pedestal the robot is mounted on */}
-        <mesh ref={(m) => m?.layers.enable(1)} position={[0, PEDESTAL_H / 2, 0]}>
-          <boxGeometry args={[0.2, PEDESTAL_H, 0.2]} />
-          <meshStandardMaterial color="#5a5f66" roughness={0.6} metalness={0.3} />
-        </mesh>
-        {/* work surface in front of the pedestal — objects rest here at a reachable height */}
-        <mesh ref={(m) => m?.layers.enable(1)} position={[0.45, 0.06, 0]}>
-          <boxGeometry args={[0.55, 0.12, 0.55]} />
-          <meshStandardMaterial color="#b8b2a4" roughness={0.7} metalness={0.05} />
         </mesh>
         <ContactShadows position={[0, 0.001, 0]} opacity={0.5} scale={5} blur={2.6} far={3} />
         <Grid
