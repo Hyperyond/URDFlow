@@ -26,7 +26,7 @@ export interface RobotViewerProps {
 export function RobotViewer({ robot, boxPosition, onBoxMove, captureRefs }: RobotViewerProps) {
   // ref-callback into state so TransformControls mounts once the mesh exists
   const [boxMesh, setBoxMesh] = useState<Mesh | null>(null);
-  const groundRef = useRef<Mesh>(null);
+  const tableRef = useRef<Mesh>(null);
 
   // Layer 1 = "capture" layer the front/wrist cameras render (real-looking scene,
   // no editor helpers). Robot + box live on both layers; the matte ground is capture-only.
@@ -37,7 +37,7 @@ export function RobotViewer({ robot, boxPosition, onBoxMove, captureRefs }: Robo
     boxMesh?.layers.enable(1);
   }, [boxMesh]);
   useEffect(() => {
-    groundRef.current?.layers.set(1);
+    tableRef.current?.layers.enable(1); // table on both layers (viewport + camera feeds)
   }, []);
 
   return (
@@ -86,10 +86,10 @@ export function RobotViewer({ robot, boxPosition, onBoxMove, captureRefs }: Robo
         )}
 
         {/* Soft fake contact shadow grounds the arm without a solid ground plane. */}
-        {/* capture-only matte ground (layer 1) so cameras see a real floor, not the grid */}
-        <mesh ref={groundRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
-          <planeGeometry args={[20, 20]} />
-          <meshStandardMaterial color="#f0f2f5" roughness={0.85} metalness={0.05} />
+        {/* work table (both layers): operation surface in the viewport AND the camera feeds */}
+        <mesh ref={tableRef} position={[0.15, -0.026, 0.15]}>
+          <boxGeometry args={[1.1, 0.05, 1.1]} />
+          <meshStandardMaterial color="#c9c2b4" roughness={0.75} metalness={0.05} />
         </mesh>
         <ContactShadows position={[0, 0.001, 0]} opacity={0.5} scale={5} blur={2.6} far={3} />
         <Grid

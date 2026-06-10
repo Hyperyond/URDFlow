@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, type RefObject } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
-import { PerspectiveCamera, WebGLRenderTarget, Box3, Vector3, type Object3D } from "three";
+import { PerspectiveCamera, WebGLRenderTarget, SRGBColorSpace, Box3, Vector3, type Object3D } from "three";
 import type { URDFRobot } from "@urdflow/urdf-web";
 
 const W = 256;
@@ -28,8 +28,9 @@ export function CaptureRig({ robot, frontCanvas, topCanvas, boxPosition, every =
   const { gl, scene } = useThree();
   const frontCam = useMemo(() => new PerspectiveCamera(50, 1, 0.01, 100), []);
   const topCam = useMemo(() => new PerspectiveCamera(58, 1, 0.01, 100), []);
-  const frontRT = useMemo(() => new WebGLRenderTarget(W, H), []);
-  const topRT = useMemo(() => new WebGLRenderTarget(W, H), []);
+  // sRGB color space so the off-screen feed matches the main viewport (not dark/linear)
+  const frontRT = useMemo(() => new WebGLRenderTarget(W, H, { colorSpace: SRGBColorSpace }), []);
+  const topRT = useMemo(() => new WebGLRenderTarget(W, H, { colorSpace: SRGBColorSpace }), []);
   const buf = useMemo(() => new Uint8Array(W * H * 4), []);
   const flip = useMemo(() => new Uint8ClampedArray(W * H * 4), []);
   const frameRef = useRef(0);
