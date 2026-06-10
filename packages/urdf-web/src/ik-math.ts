@@ -84,3 +84,13 @@ export function dampedLeastSquares(J: Mat, dx: Vec, lambda: number): Vec {
   const inv = invert(JJT);
   return matvec(JT, matvec(inv, dx));
 }
+
+/** Damped pseudo-inverse J⁺ = Jᵀ(JJᵀ+λ²I)⁻¹ (n×m), for null-space projection. */
+export function dampedPinv(J: Mat, lambda: number): Mat {
+  const JT = transpose(J);
+  const JJT = matmul(J, JT);
+  const m = JJT.length;
+  const l2 = lambda * lambda;
+  for (let i = 0; i < m; i++) JJT[i]![i] = JJT[i]![i]! + l2;
+  return matmul(JT, invert(JJT));
+}

@@ -1,6 +1,6 @@
 import { Vector3, Quaternion } from "three";
 import type { URDFRobot } from "urdf-loader";
-import { dampedLeastSquares } from "./ik-math";
+import { dampedLeastSquares, dampedPinv, matmul, matvec } from "./ik-math";
 
 /** Leaf link of the kinematic tree (first link with no child joint). */
 export function findEndEffectorLink(robot: URDFRobot): string {
@@ -59,6 +59,9 @@ export interface SolveIKOptions {
   iterations?: number;
   lambda?: number;
   limits?: Record<string, { lower: number; upper: number }>;
+  /** Secondary joint-space target; null-space biases toward it (natural posture). */
+  restPose?: number[];
+  restGain?: number;
 }
 
 /** Iteratively drive joints so eeLink reaches target (mutates robot). Returns joint angles. */
@@ -81,7 +84,21 @@ export function solveIK(
     const dx = [posErr.x, posErr.y, posErr.z, rotErr[0]!, rotErr[1]!, rotErr[2]!];
     if (Math.hypot(...dx) < 1e-4) break;
     const J = numericJacobian(robot, eeLink, jointNames);
-    const dq = dampedLeastSquares(J, dx, lambda);
+    let dq: number[];
+    if (opts.restPose && opts.restGain) {
+      // primary task + null-space bias toward restPose: dq = J⁺dx + (I − J⁺J)·gain·(rest − q)
+      const Jp = dampedPinv(J, lambda); // n×6
+      const primary = matvec(Jp, dx);
+      const JpJ = matmul(Jp, J); // n×n
+      const rest = jointNames.map((name, i) => {
+        const q = robot.joints[name]!.angle as number;
+        return opts.restGain! * ((opts.restPose![i] ?? q) - q);
+      });
+      const JpJr = matvec(JpJ, rest); // P·rest = rest − J⁺J·rest
+      dq = primary.map((p, i) => p + (rest[i]! - JpJr[i]!));
+    } else {
+      dq = dampedLeastSquares(J, dx, lambda);
+    }
     for (let i = 0; i < jointNames.length; i++) {
       const name = jointNames[i]!;
       let q = (robot.joints[name]!.angle as number) + dq[i]!;

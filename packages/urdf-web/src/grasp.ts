@@ -49,7 +49,12 @@ export function planGrasp(
     // EE z-axis points toward the box (= -approachDir)
     const quat = new Quaternion().setFromUnitVectors(new Vector3(0, 0, 1), dir.clone().negate());
     restore();
-    solveIK(robot, eeLink, jointNames, boxPos, [quat.x, quat.y, quat.z, quat.w], { iterations: 40, lambda: 0.06 });
+    solveIK(robot, eeLink, jointNames, boxPos, [quat.x, quat.y, quat.z, quat.w], {
+      iterations: 40,
+      lambda: 0.06,
+      restPose: home,
+      restGain: 0.03,
+    });
     robot.updateMatrixWorld(true);
     const reached = robot.links[eeLink]!.getWorldPosition(new Vector3());
     if (reached.distanceTo(box) > reach) continue;
