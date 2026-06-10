@@ -10,9 +10,14 @@ export interface RobotViewerProps {
   robot: URDFRobot | null;
   boxPosition?: [number, number, number];
   onBoxMove?: (p: [number, number, number]) => void;
+  gripperPose?: {
+    position: [number, number, number];
+    quaternion: [number, number, number, number];
+    gripper: number;
+  } | null;
 }
 
-export function RobotViewer({ robot, boxPosition, onBoxMove }: RobotViewerProps) {
+export function RobotViewer({ robot, boxPosition, onBoxMove, gripperPose }: RobotViewerProps) {
   // ref-callback into state so TransformControls mounts once the mesh exists
   const [boxMesh, setBoxMesh] = useState<Mesh | null>(null);
   return (
@@ -25,6 +30,19 @@ export function RobotViewer({ robot, boxPosition, onBoxMove }: RobotViewerProps)
         <directionalLight position={[-4, 3, -5]} intensity={0.5} />
 
         {robot && <primitive object={robot} />}
+
+        {/* Generic virtual gripper at the EE target — opens/closes with the gripper
+            channel, so any robot (even a flange-only industrial arm) shows the grasp. */}
+        {gripperPose && (
+          <group position={gripperPose.position} quaternion={gripperPose.quaternion}>
+            {[-1, 1].map((s) => (
+              <mesh key={s} position={[s * (0.012 + 0.03 * (1 - gripperPose.gripper)), 0, 0.03]}>
+                <boxGeometry args={[0.012, 0.012, 0.06]} />
+                <meshStandardMaterial color="#f59e0b" emissive="#b45309" emissiveIntensity={0.35} />
+              </mesh>
+            ))}
+          </group>
+        )}
 
         {/* Draggable target box — user positions it, planGrasp aims for it. */}
         {boxPosition && (

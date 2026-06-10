@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Vector3, Quaternion } from "three";
 import {
   findEndEffectorLink,
   planGrasp,
@@ -28,6 +29,7 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
   const eeLink = useMemo(() => (robot ? findEndEffectorLink(robot) : ""), [robot]);
   const jointNames = useMemo(() => model.map((m) => m.name), [model]);
   const duration = keyframes.length ? Math.max(...keyframes.map((k) => k.t)) : 0;
+  const currentPose = keyframes.length >= 2 ? interpolateKeyframes(keyframes, Math.min(playhead, duration)) : null;
 
   useEffect(() => {
     setKeyframes([]);
@@ -45,8 +47,18 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
       return;
     }
     setError(null);
-    setKeyframes(buildGraspTrajectory(plan));
+    // read current EE pose as the home start so playback eases in (no jump)
+    robot.updateMatrixWorld(true);
+    const ee = robot.links[eeLink];
+    const hp = ee?.getWorldPosition(new Vector3());
+    const hq = ee?.getWorldQuaternion(new Quaternion());
+    const kfs = buildGraspTrajectory(plan, {
+      homePos: hp ? [hp.x, hp.y, hp.z] : undefined,
+      homeQuat: hq ? [hq.x, hq.y, hq.z, hq.w] : undefined,
+    });
+    setKeyframes(kfs);
     setPlayhead(0);
+    setIsPlaying(true); // auto-play so the user sees the motion
   }, [robot, eeLink, jointNames, boxPosition]);
 
   useEffect(() => {
@@ -89,8 +101,12 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     playhead,
     duration,
     isPlaying,
-    play: () => setIsPlaying(true),
+    play: () => {
+      setPlayhead((t) => (t >= duration ? 0 : t)); // restart if parked at the end
+      setIsPlaying(true);
+    },
     pause: () => setIsPlaying(false),
+    currentPose,
     exportEpisode,
   };
 }

@@ -69,13 +69,31 @@ export function planGrasp(
   return best;
 }
 
-/** Build approach→grasp→close→lift keyframes from a grasp plan. */
-export function buildGraspTrajectory(plan: GraspPlan, liftHeight = 0.15): Keyframe[] {
+export interface GraspTrajectoryOptions {
+  /** Start pose (current EE) so playback eases in instead of jumping to pre-grasp. */
+  homePos?: [number, number, number];
+  homeQuat?: [number, number, number, number];
+  liftHeight?: number;
+}
+
+/** Build (home →) approach → grasp → close → lift keyframes from a grasp plan. */
+export function buildGraspTrajectory(plan: GraspPlan, opts: GraspTrajectoryOptions = {}): Keyframe[] {
+  const liftH = opts.liftHeight ?? 0.15;
   const q = plan.graspQuat;
-  return [
-    { t: 0, position: plan.prePos, quaternion: q, gripper: 0 },
-    { t: 1, position: plan.graspPos, quaternion: q, gripper: 0 },
-    { t: 1.5, position: plan.graspPos, quaternion: q, gripper: 1 },
-    { t: 2.5, position: [plan.graspPos[0], plan.graspPos[1] + liftHeight, plan.graspPos[2]], quaternion: q, gripper: 1 },
-  ];
+  const kfs: Keyframe[] = [];
+  let t = 0;
+  if (opts.homePos) {
+    kfs.push({ t: 0, position: opts.homePos, quaternion: opts.homeQuat ?? q, gripper: 0 });
+    t = 1.5; // ease from home to pre-grasp over 1.5s
+  }
+  kfs.push({ t, position: plan.prePos, quaternion: q, gripper: 0 }); // pre-grasp, open
+  kfs.push({ t: t + 1.5, position: plan.graspPos, quaternion: q, gripper: 0 }); // descend, still open
+  kfs.push({ t: t + 2.3, position: plan.graspPos, quaternion: q, gripper: 1 }); // close gripper
+  kfs.push({
+    t: t + 3.8,
+    position: [plan.graspPos[0], plan.graspPos[1] + liftH, plan.graspPos[2]],
+    quaternion: q,
+    gripper: 1,
+  }); // lift
+  return kfs;
 }
