@@ -2,7 +2,16 @@
 
 import { useState, useEffect, useRef, type RefObject } from "react";
 import { Canvas } from "@react-three/fiber";
-import { OrbitControls, Grid, ContactShadows, TransformControls, GizmoHelper, GizmoViewport } from "@react-three/drei";
+import {
+  OrbitControls,
+  Grid,
+  ContactShadows,
+  TransformControls,
+  GizmoHelper,
+  GizmoViewport,
+  Environment,
+  Lightformer,
+} from "@react-three/drei";
 import { ACESFilmicToneMapping, type Mesh } from "three";
 import type { URDFRobot } from "@urdflow/urdf-web";
 import { CaptureRig } from "./CaptureRig";
@@ -38,12 +47,19 @@ export function RobotViewer({ robot, boxPosition, onBoxMove, captureRefs }: Robo
         gl={{ toneMapping: ACESFilmicToneMapping, toneMappingExposure: 1.15, antialias: true }}
         style={{ height: "100%", width: "100%", background: "#e9ecef" }}
       >
-        <color attach="background" args={["#e9ecef"]} />
-        {/* sky/ground fill + warm key + cool rim, tuned for a white set */}
-        <hemisphereLight args={["#ffffff", "#c4c9d2", 1.0]} />
-        <ambientLight intensity={0.35} />
-        <directionalLight position={[5, 8, 4]} intensity={1.8} color="#fff4e6" />
-        <directionalLight position={[-5, 3, -4]} intensity={0.6} color="#9db4ff" />
+        <color attach="background" args={["#eef1f4"]} />
+        {/* image-based lighting — procedural studio env (no network HDR) for realistic PBR */}
+        <Environment resolution={256}>
+          <Lightformer intensity={1.6} position={[0, 4, -6]} scale={[14, 8, 1]} color="#ffffff" />
+          <Lightformer intensity={0.9} position={[-6, 2, 2]} scale={[10, 6, 1]} color="#e8efff" />
+          <Lightformer intensity={0.9} position={[6, 2, 2]} scale={[10, 6, 1]} color="#fff3e6" />
+          <Lightformer intensity={0.5} position={[0, -4, 1]} scale={[14, 6, 1]} color="#ffffff" />
+        </Environment>
+        {/* direct lights now just add highlight + shape on top of the IBL */}
+        <hemisphereLight args={["#ffffff", "#cdd2da", 0.5]} />
+        <ambientLight intensity={0.2} />
+        <directionalLight position={[5, 8, 4]} intensity={1.1} color="#fff6ea" />
+        <directionalLight position={[-5, 3, -4]} intensity={0.35} color="#9db4ff" />
 
         {robot && <primitive object={robot} />}
         {captureRefs && (
@@ -73,7 +89,7 @@ export function RobotViewer({ robot, boxPosition, onBoxMove, captureRefs }: Robo
         {/* capture-only matte ground (layer 1) so cameras see a real floor, not the grid */}
         <mesh ref={groundRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
           <planeGeometry args={[20, 20]} />
-          <meshStandardMaterial color="#eceef1" roughness={1} metalness={0} />
+          <meshStandardMaterial color="#f0f2f5" roughness={0.85} metalness={0.05} />
         </mesh>
         <ContactShadows position={[0, 0.001, 0]} opacity={0.5} scale={5} blur={2.6} far={3} />
         <Grid
