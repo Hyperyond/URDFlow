@@ -13,6 +13,8 @@ export interface PlanGraspOptions {
   candidates?: number;
   approachDist?: number;
   reachThreshold?: number;
+  /** Bias toward approaching from above (top-down). Higher = stronger preference. */
+  approachWeight?: number;
 }
 
 /** Roughly uniform points on a unit sphere (Fibonacci spiral). */
@@ -58,7 +60,10 @@ export function planGrasp(
     robot.updateMatrixWorld(true);
     const reached = robot.links[eeLink]!.getWorldPosition(new Vector3());
     if (reached.distanceTo(box) > reach) continue;
-    const cost = jointNames.reduce((s, n, i) => s + Math.abs((robot.joints[n]!.angle as number) - home[i]!), 0);
+    const jointCost = jointNames.reduce((s, n, i) => s + Math.abs((robot.joints[n]!.angle as number) - home[i]!), 0);
+    // prefer approaching from above so the gripper comes straight down (intuitive top-down grasp)
+    const topDown = (opts.approachWeight ?? 2.5) * (1 - dir.y);
+    const cost = jointCost + topDown;
     if (cost < bestCost) {
       bestCost = cost;
       const pre = box.clone().add(dir.clone().multiplyScalar(approachDist));
