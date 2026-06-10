@@ -39,6 +39,7 @@ function DraggableBox({
   color,
   selected,
   wireframe,
+  captureVisible = true,
   onSelect,
   onMove,
 }: {
@@ -46,13 +47,14 @@ function DraggableBox({
   color: string;
   selected: boolean;
   wireframe?: boolean;
+  captureVisible?: boolean;
   onSelect: () => void;
   onMove: (p: [number, number, number]) => void;
 }) {
   const [mesh, setMesh] = useState<Mesh | null>(null);
   useEffect(() => {
-    mesh?.layers.enable(1);
-  }, [mesh]);
+    if (captureVisible) mesh?.layers.enable(1); // target marker stays off the camera layer
+  }, [mesh, captureVisible]);
   return (
     <>
       <mesh
@@ -170,6 +172,7 @@ export function RobotViewer({
             position={target}
             color="#f59e0b"
             wireframe
+            captureVisible={false}
             selected={selectedId === "target"}
             onSelect={() => onSelect("target")}
             onMove={onMoveTarget}

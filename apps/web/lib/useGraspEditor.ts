@@ -44,6 +44,7 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
   useEffect(() => {
     setKeyframes([]);
     setJointTracks([]);
+    playheadRef.current = 0;
     setPlayhead(0);
     setIsPlaying(false);
     setError(null);
