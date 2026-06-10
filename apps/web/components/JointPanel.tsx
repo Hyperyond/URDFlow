@@ -43,6 +43,7 @@ export function JointPanel({ model, values, onChange, onReset, onResetAll }: Joi
               </div>
               <input
                 type="range"
+                aria-label={j.name}
                 min={j.lower}
                 max={j.upper}
                 step={0.01}

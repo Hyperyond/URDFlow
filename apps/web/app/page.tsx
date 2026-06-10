@@ -40,7 +40,7 @@ export default function Page() {
     return () => {
       delete (window as unknown as { __urdfDrop?: unknown }).__urdfDrop;
     };
-  }, [r]);
+  }, [r.loadFiles]);
 
   return (
     <div className="grid h-screen grid-rows-[auto_1fr]">

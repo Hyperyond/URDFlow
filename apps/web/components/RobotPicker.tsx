@@ -27,10 +27,10 @@ export function RobotPicker({ presets, uploaded, activeLabel, onPick }: RobotPic
             {p.name}
           </button>
         ))}
-        {uploaded.map((u) => (
+        {uploaded.map((u, i) => (
           <div
-            key={u.label}
-            className={`rounded px-2 py-1.5 text-xs ${
+            key={`${u.label}-${i}`}
+            className={`cursor-default rounded px-2 py-1.5 text-xs ${
               activeLabel === u.label ? "bg-accent/10 text-accent" : "text-zinc-400"
             }`}
           >

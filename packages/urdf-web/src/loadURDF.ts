@@ -60,7 +60,8 @@ export async function loadURDFFromFiles(
   const text = td.decode(urdfEntry.data);
   return loadURDFFromString(text, {
     ...options,
-    packages: () => "",
+    // Mesh refs resolve against the uploaded file map, so package roots collapse to "".
+    packages: options.packages ?? (() => ""),
     loadMeshCb: options.loadMeshCb ?? createFileMeshLoader(fm),
   });
 }

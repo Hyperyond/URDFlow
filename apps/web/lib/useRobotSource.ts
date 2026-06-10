@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   loadURDFFromURL,
   loadURDFFromFiles,
@@ -23,6 +23,8 @@ export function useRobotSource() {
     label: PRESETS[0]!.name,
   });
   const [robot, setRobot] = useState<URDFRobot | null>(null);
+  // Ref mirror of `robot` so FK callbacks stay pure (no side effects in setState updaters).
+  const robotRef = useRef<URDFRobot | null>(null);
   const [model, setModel] = useState<JointInfo[]>([]);
   const [values, setValues] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
@@ -31,6 +33,7 @@ export function useRobotSource() {
 
   useEffect(() => {
     let alive = true;
+    robotRef.current = null;
     setRobot(null);
     setModel([]);
     setValues({});
@@ -46,6 +49,7 @@ export function useRobotSource() {
         : loadURDFFromFiles(source.entries, { onProgress });
     p.then((r) => {
       if (!alive) return;
+      robotRef.current = r;
       setRobot(r);
       setModel(getJointModel(r));
       setLoading(false);
@@ -61,20 +65,15 @@ export function useRobotSource() {
   }, [source]);
 
   const onChange = useCallback((name: string, value: number) => {
-    setRobot((r) => {
-      if (r) setJoint(r, name, value);
-      return r;
-    });
+    if (robotRef.current) setJoint(robotRef.current, name, value);
     setValues((v) => ({ ...v, [name]: value }));
   }, []);
 
   const resetJoint = useCallback((name: string) => onChange(name, 0), [onChange]);
 
   const resetAll = useCallback(() => {
-    setRobot((r) => {
-      if (r) model.forEach((j) => setJoint(r, j.name, 0));
-      return r;
-    });
+    const r = robotRef.current;
+    if (r) model.forEach((j) => setJoint(r, j.name, 0));
     setValues({});
   }, [model]);
 

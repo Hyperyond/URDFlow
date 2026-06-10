@@ -50,7 +50,13 @@ export async function entriesFromDataTransfer(items: DataTransferItemList): Prom
       }
     } else if (entry.isDirectory) {
       const reader = entry.createReader();
-      const children: any[] = await new Promise((res, rej) => reader.readEntries(res, rej));
+      // readEntries() returns at most 100 entries per call — loop until empty.
+      const children: any[] = [];
+      let batch: any[];
+      do {
+        batch = await new Promise<any[]>((res, rej) => reader.readEntries(res, rej));
+        children.push(...batch);
+      } while (batch.length > 0);
       for (const c of children) await walk(c, prefix + entry.name + "/");
     }
   }
