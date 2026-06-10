@@ -56,6 +56,10 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
       setError("先在左侧 Scene 添加一个正方体");
       return;
     }
+    if (gripperJoints.length === 0) {
+      setError("当前机型没有夹爪(如 UR5),抓取需要带夹爪的机型(如 Franka Panda)");
+      return;
+    }
     const plan = planGrasp(robot, eeLink, jointNames, cube.position, {
       candidates: 36,
       reachThreshold: 0.05,
@@ -90,6 +94,12 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
         { t: last.t + 3.4, position: above, quaternion: q, gripper: 0 },
       ];
     }
+    // return to the home pose at the end (arm goes back to rest)
+    const home0 = kfs[0]!;
+    kfs = [
+      ...kfs,
+      { t: kfs[kfs.length - 1]!.t + 1.5, position: home0.position, quaternion: home0.quaternion, gripper: 0 },
+    ];
     setKeyframes(kfs);
     // joint-space tracks for the timeline curves (retarget a low-fps sampling)
     const curveSamples = sampleTrajectory(kfs, 20, smooth);
@@ -100,7 +110,7 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     playheadRef.current = 0;
     setPlayhead(0);
     setIsPlaying(true); // auto-play so the user sees the motion
-  }, [robot, eeLink, jointNames, objects, target]);
+  }, [robot, eeLink, jointNames, objects, target, gripperJoints]);
 
   useEffect(() => {
     if (!isPlaying || !robot || keyframes.length < 2) return;
@@ -120,7 +130,7 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
       }
       playheadRef.current = nt;
       const pose = interpolateKeyframes(keyframes, nt);
-      solveIK(robot, eeLink, jointNames, pose.position, pose.quaternion, { iterations: 20, lambda: 0.08 });
+      solveIK(robot, eeLink, jointNames, pose.position, pose.quaternion, { iterations: 30, lambda: 0.06 });
       applyGripper(robot, gripperJoints, pose.gripper);
       // kinematic attach: the grasped cube rides the gripper while it's closed
       if (pose.gripper > 0.5) {
