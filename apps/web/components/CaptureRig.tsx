@@ -22,8 +22,8 @@ export interface CaptureRigProps {
  */
 export function CaptureRig({ frontCanvas, topCanvas, every = 2 }: CaptureRigProps) {
   const { gl, scene } = useThree();
-  const frontCam = useMemo(() => new PerspectiveCamera(45, 1, 0.01, 100), []);
-  const topCam = useMemo(() => new PerspectiveCamera(50, 1, 0.01, 100), []);
+  const frontCam = useMemo(() => new PerspectiveCamera(50, 1, 0.01, 100), []);
+  const topCam = useMemo(() => new PerspectiveCamera(58, 1, 0.01, 100), []);
   const frontRT = useMemo(() => new WebGLRenderTarget(W, H), []);
   const topRT = useMemo(() => new WebGLRenderTarget(W, H), []);
   const buf = useMemo(() => new Uint8Array(W * H * 4), []);
@@ -35,12 +35,12 @@ export function CaptureRig({ frontCanvas, topCanvas, every = 2 }: CaptureRigProp
     frontCam.layers.set(CAPTURE_LAYER);
     topCam.layers.set(CAPTURE_LAYER);
     // front: eye-level, looking across the workspace
-    frontCam.position.set(0.15, 0.45, 1.05);
-    frontCam.lookAt(0.2, 0.1, 0.2);
-    // top: bird's-eye straight down over the workspace
-    topCam.position.set(0.25, 1.3, 0.25);
+    frontCam.position.set(1.0, 0.6, 1.0);
+    frontCam.lookAt(0.1, 0.3, 0.1); // robot body, not the workspace corner
+    // top: bird's-eye straight down over robot + workspace
+    topCam.position.set(0.15, 1.5, 0.15);
     topCam.up.set(0, 0, -1); // down-looking camera needs a non-parallel up
-    topCam.lookAt(0.25, 0, 0.25);
+    topCam.lookAt(0.15, 0.05, 0.15);
   }, [frontCam, topCam]);
 
   // lights must also illuminate the capture layer, else the feed is black
