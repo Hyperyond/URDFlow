@@ -27,6 +27,7 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
   const [target, setTarget] = useState<[number, number, number] | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const idRef = useRef(0);
+  const playheadRef = useRef(0);
   const [keyframes, setKeyframes] = useState<Keyframe[]>([]);
   const [playhead, setPlayhead] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -96,6 +97,7 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     const tracks = jointNames.map((n) => ({ name: n, values: jf.map((f) => f.joints[n] ?? 0) }));
     tracks.push({ name: "gripper", values: jf.map((f) => f.gripper) });
     setJointTracks(tracks);
+    playheadRef.current = 0;
     setPlayhead(0);
     setIsPlaying(true); // auto-play so the user sees the motion
   }, [robot, eeLink, jointNames, objects, target]);
@@ -107,18 +109,35 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     const tick = (now: number) => {
       const dt = (now - last) / 1000;
       last = now;
-      setPlayhead((t) => {
-        const nt = t + dt;
-        const pose = interpolateKeyframes(keyframes, Math.min(nt, duration));
-        solveIK(robot, eeLink, jointNames, pose.position, pose.quaternion, { iterations: 20, lambda: 0.08 });
-        applyGripper(robot, gripperJoints, pose.gripper);
-        if (nt >= duration) {
-          if (loop) return 0; // restart, keep playing
-          setIsPlaying(false);
-          return duration;
+      let nt = playheadRef.current + dt;
+      let ended = false;
+      if (nt >= duration) {
+        if (loop) nt = 0;
+        else {
+          nt = duration;
+          ended = true;
         }
-        return nt;
-      });
+      }
+      playheadRef.current = nt;
+      const pose = interpolateKeyframes(keyframes, nt);
+      solveIK(robot, eeLink, jointNames, pose.position, pose.quaternion, { iterations: 20, lambda: 0.08 });
+      applyGripper(robot, gripperJoints, pose.gripper);
+      // kinematic attach: the grasped cube rides the gripper while it's closed
+      if (pose.gripper > 0.5) {
+        robot.updateMatrixWorld(true);
+        const ee = robot.links[eeLink];
+        if (ee) {
+          const p = ee.getWorldPosition(new Vector3());
+          setObjects((o) =>
+            o.length ? [{ ...o[0]!, position: [p.x, p.y, p.z] as [number, number, number] }, ...o.slice(1)] : o,
+          );
+        }
+      }
+      setPlayhead(nt);
+      if (ended) {
+        setIsPlaying(false);
+        return;
+      }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -170,12 +189,14 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
         generateGrasp(); // auto-plan + auto-play — no manual generate step
         return;
       }
-      setPlayhead((t) => (t >= duration ? 0 : t)); // restart if parked at the end
+      if (playheadRef.current >= duration) playheadRef.current = 0; // restart if parked at the end
+      setPlayhead(playheadRef.current);
       setIsPlaying(true);
     },
     pause: () => setIsPlaying(false),
     stop: () => {
       setIsPlaying(false);
+      playheadRef.current = 0;
       setPlayhead(0);
     },
     loop,

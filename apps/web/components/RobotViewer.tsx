@@ -12,7 +12,7 @@ import {
   Environment,
   Lightformer,
 } from "@react-three/drei";
-import { ACESFilmicToneMapping, type Mesh } from "three";
+import { ACESFilmicToneMapping, Box3, type Mesh } from "three";
 import type { URDFRobot } from "@urdflow/urdf-web";
 import { CaptureRig } from "./CaptureRig";
 
@@ -98,8 +98,26 @@ export function RobotViewer({
   onMoveTarget,
   captureRefs,
 }: RobotViewerProps) {
+  const [robotY, setRobotY] = useState(0);
+
   useEffect(() => {
     robot?.traverse((o) => o.layers.enable(1));
+  }, [robot]);
+
+  // lift the robot so its lowest point sits on the ground (y=0), not sunk into it
+  useEffect(() => {
+    if (!robot) {
+      setRobotY(0);
+      return;
+    }
+    const fit = () => {
+      robot.updateMatrixWorld(true);
+      const b = new Box3().setFromObject(robot);
+      if (Number.isFinite(b.min.y)) setRobotY(-Math.min(0, b.min.y));
+    };
+    fit();
+    const t = setTimeout(fit, 200); // re-fit after async meshes finish loading
+    return () => clearTimeout(t);
   }, [robot]);
 
   return (
@@ -123,7 +141,7 @@ export function RobotViewer({
         <directionalLight position={[5, 8, 4]} intensity={1.1} color="#fff6ea" />
         <directionalLight position={[-5, 3, -4]} intensity={0.35} color="#9db4ff" />
 
-        {robot && <primitive object={robot} />}
+        {robot && <primitive object={robot} position={[0, robotY, 0]} />}
         {captureRefs && (
           <CaptureRig
             robot={robot}
