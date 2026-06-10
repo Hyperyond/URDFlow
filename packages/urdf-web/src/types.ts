@@ -17,8 +17,8 @@ export interface JointInfo {
 }
 
 export interface LoadURDFOptions {
-  /** Base dir (string) or name→path map for resolving `package://` mesh paths. */
-  packages?: string | Record<string, string>;
+  /** Base dir (string), name→path map, or resolver fn for `package://` mesh paths. */
+  packages?: string | Record<string, string> | ((targetPkg: string) => string);
   /** Custom mesh loader, forwarded to urdf-loader's loadMeshCb. */
   loadMeshCb?: (
     path: string,
@@ -27,4 +27,13 @@ export interface LoadURDFOptions {
   ) => void;
   /** Convert URDF Z-up to three.js Y-up. Default: true. */
   convertUpAxis?: boolean;
+  /** Progress callback wired to the three.js LoadingManager. */
+  onProgress?: (loaded: number, total: number) => void;
+}
+
+/** One in-browser file from an uploaded robot (folder or unzipped). */
+export interface URDFFileEntry {
+  /** Path relative to the upload root, e.g. "ur5/meshes/visual/base.dae". */
+  path: string;
+  data: ArrayBuffer;
 }
