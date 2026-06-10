@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, type RefObject } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { PerspectiveCamera, WebGLRenderTarget, Box3, Vector3, type Object3D } from "three";
 import type { URDFRobot } from "@urdflow/urdf-web";
@@ -18,10 +18,11 @@ export interface CaptureRigProps {
 }
 
 /**
- * Off-screen render of two FIXED cameras — a front (eye-level) view and a top
- * (bird's-eye) view, matching LeRobot's observation.front / observation.top.
- * Cameras render ONLY layer 1 (robot + box + matte ground), so editor helpers
- * (grid, gizmos, contact shadow) on layer 0 never appear — looks like real feeds.
+ * Off-screen render of two FIXED cameras (front eye-level + top bird's-eye), matching
+ * LeRobot's observation.front / observation.top. Cameras render ONLY layer 1 (robot +
+ * box + matte ground); editor helpers on layer 0 never appear. Robot meshes load
+ * async, so we (re)enable the capture layer on them every frame and re-fit framing
+ * periodically once the bounding box settles.
  */
 export function CaptureRig({ robot, frontCanvas, topCanvas, boxPosition, every = 2 }: CaptureRigProps) {
   const { gl, scene } = useThree();
@@ -33,10 +34,8 @@ export function CaptureRig({ robot, frontCanvas, topCanvas, boxPosition, every =
   const flip = useMemo(() => new Uint8ClampedArray(W * H * 4), []);
   const frameRef = useRef(0);
 
-  // auto-frame the ACTUAL robot bounds (+ target box) so any robot/pose stays fully in view
-  useEffect(() => {
-    frontCam.layers.set(CAPTURE_LAYER);
-    topCam.layers.set(CAPTURE_LAYER);
+  // fit both cameras to the actual robot bounds (+ target box)
+  const reframe = useCallback(() => {
     const bbox = new Box3();
     if (robot) {
       robot.updateMatrixWorld(true);
@@ -54,7 +53,13 @@ export function CaptureRig({ robot, frontCanvas, topCanvas, boxPosition, every =
     topCam.position.set(center.x, center.y + tdist, center.z);
     topCam.up.set(0, 0, -1); // down-looking camera needs a non-parallel up
     topCam.lookAt(center);
-  }, [frontCam, topCam, robot, boxPosition]);
+  }, [robot, boxPosition, frontCam, topCam]);
+
+  useEffect(() => {
+    frontCam.layers.set(CAPTURE_LAYER);
+    topCam.layers.set(CAPTURE_LAYER);
+    reframe();
+  }, [reframe, frontCam, topCam]);
 
   // lights must also illuminate the capture layer, else the feed is black
   useEffect(() => {
@@ -88,6 +93,10 @@ export function CaptureRig({ robot, frontCanvas, topCanvas, boxPosition, every =
   useFrame(() => {
     frameRef.current++;
     if (every > 1 && frameRef.current % every !== 0) return;
+    // async-loaded robot meshes default to layer 0 — keep them on the capture layer
+    if (robot) robot.traverse((o) => o.layers.enable(CAPTURE_LAYER));
+    // re-fit periodically while meshes finish loading (bbox grows from empty → full)
+    if (frameRef.current % 30 === 0) reframe();
     renderTo(frontCam, frontRT, frontCanvas.current);
     renderTo(topCam, topRT, topCanvas.current);
   });
