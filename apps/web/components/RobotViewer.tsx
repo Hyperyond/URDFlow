@@ -16,24 +16,91 @@ import { ACESFilmicToneMapping, type Mesh } from "three";
 import type { URDFRobot } from "@urdflow/urdf-web";
 import { CaptureRig } from "./CaptureRig";
 
+export interface SceneObj {
+  id: string;
+  position: [number, number, number];
+}
+
 export interface RobotViewerProps {
   robot: URDFRobot | null;
-  boxPosition?: [number, number, number];
-  onBoxMove?: (p: [number, number, number]) => void;
+  objects: SceneObj[];
+  target: [number, number, number] | null;
+  selectedId: string | null;
+  onSelect: (id: string | null) => void;
+  onMoveObject: (id: string, p: [number, number, number]) => void;
+  onMoveTarget: (p: [number, number, number]) => void;
   captureRefs?: { front: RefObject<HTMLCanvasElement | null>; top: RefObject<HTMLCanvasElement | null> };
 }
 
-export function RobotViewer({ robot, boxPosition, onBoxMove, captureRefs }: RobotViewerProps) {
-  // ref-callback into state so TransformControls mounts once the mesh exists
-  const [boxMesh, setBoxMesh] = useState<Mesh | null>(null);
-  // Layer 1 = "capture" layer the cameras render (real scene, no editor helpers).
-  // Robot + box + table all live on both layers (viewport + camera feeds).
+function DraggableBox({
+  position,
+  color,
+  selected,
+  wireframe,
+  onSelect,
+  onMove,
+}: {
+  position: [number, number, number];
+  color: string;
+  selected: boolean;
+  wireframe?: boolean;
+  onSelect: () => void;
+  onMove: (p: [number, number, number]) => void;
+}) {
+  const [mesh, setMesh] = useState<Mesh | null>(null);
+  useEffect(() => {
+    mesh?.layers.enable(1);
+  }, [mesh]);
+  return (
+    <>
+      <mesh
+        ref={setMesh}
+        position={position}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSelect();
+        }}
+      >
+        <boxGeometry args={[0.05, 0.05, 0.05]} />
+        <meshStandardMaterial
+          color={color}
+          emissive={color}
+          emissiveIntensity={selected ? 0.5 : 0.25}
+          roughness={0.4}
+          wireframe={wireframe}
+          transparent={wireframe}
+          opacity={wireframe ? 0.7 : 1}
+        />
+      </mesh>
+      {selected && mesh && (
+        <TransformControls
+          object={mesh}
+          mode="translate"
+          showY={false}
+          size={0.5}
+          onObjectChange={() => {
+            const p = mesh.position;
+            onMove([p.x, p.y, p.z]);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+export function RobotViewer({
+  robot,
+  objects,
+  target,
+  selectedId,
+  onSelect,
+  onMoveObject,
+  onMoveTarget,
+  captureRefs,
+}: RobotViewerProps) {
   useEffect(() => {
     robot?.traverse((o) => o.layers.enable(1));
   }, [robot]);
-  useEffect(() => {
-    boxMesh?.layers.enable(1);
-  }, [boxMesh]);
 
   return (
     <div className="relative h-full w-full">
@@ -41,6 +108,7 @@ export function RobotViewer({ robot, boxPosition, onBoxMove, captureRefs }: Robo
         camera={{ position: [1.4, 1.1, 1.4], fov: 50 }}
         gl={{ toneMapping: ACESFilmicToneMapping, toneMappingExposure: 1.15, antialias: true }}
         style={{ height: "100%", width: "100%", background: "#e9ecef" }}
+        onPointerMissed={() => onSelect(null)}
       >
         <color attach="background" args={["#eef1f4"]} />
         {/* image-based lighting — procedural studio env (no network HDR) for realistic PBR */}
@@ -50,7 +118,6 @@ export function RobotViewer({ robot, boxPosition, onBoxMove, captureRefs }: Robo
           <Lightformer intensity={0.9} position={[6, 2, 2]} scale={[10, 6, 1]} color="#fff3e6" />
           <Lightformer intensity={0.5} position={[0, -4, 1]} scale={[14, 6, 1]} color="#ffffff" />
         </Environment>
-        {/* direct lights now just add highlight + shape on top of the IBL */}
         <hemisphereLight args={["#ffffff", "#cdd2da", 0.5]} />
         <ambientLight intensity={0.2} />
         <directionalLight position={[5, 8, 4]} intensity={1.1} color="#fff6ea" />
@@ -58,31 +125,37 @@ export function RobotViewer({ robot, boxPosition, onBoxMove, captureRefs }: Robo
 
         {robot && <primitive object={robot} />}
         {captureRefs && (
-          <CaptureRig robot={robot} frontCanvas={captureRefs.front} topCanvas={captureRefs.top} boxPosition={boxPosition} />
-        )}
-
-        {/* Draggable target box — user positions it, planGrasp aims for it. */}
-        {boxPosition && (
-          <mesh ref={setBoxMesh} position={boxPosition}>
-            <boxGeometry args={[0.05, 0.05, 0.05]} />
-            <meshStandardMaterial color="#22d3ee" emissive="#0e7490" emissiveIntensity={0.45} roughness={0.4} />
-          </mesh>
-        )}
-        {boxMesh && boxPosition && (
-          <TransformControls
-            object={boxMesh}
-            mode="translate"
-            size={0.6}
-            showY={false} /* keep the box on the table plane; drag only in X/Z */
-            onObjectChange={() => {
-              const p = boxMesh.position;
-              onBoxMove?.([p.x, p.y, p.z]);
-            }}
+          <CaptureRig
+            robot={robot}
+            frontCanvas={captureRefs.front}
+            topCanvas={captureRefs.top}
+            boxPosition={objects[0]?.position}
           />
         )}
 
-        {/* Soft fake contact shadow grounds the arm without a solid ground plane. */}
-        {/* work table (both layers): operation surface in the viewport AND the camera feeds */}
+        {/* scene objects: cubes to grasp + optional target placement (wireframe) */}
+        {objects.map((obj) => (
+          <DraggableBox
+            key={obj.id}
+            position={obj.position}
+            color="#22d3ee"
+            selected={selectedId === obj.id}
+            onSelect={() => onSelect(obj.id)}
+            onMove={(p) => onMoveObject(obj.id, p)}
+          />
+        ))}
+        {target && (
+          <DraggableBox
+            position={target}
+            color="#f59e0b"
+            wireframe
+            selected={selectedId === "target"}
+            onSelect={() => onSelect("target")}
+            onMove={onMoveTarget}
+          />
+        )}
+
+        {/* work table (both layers): operation surface in viewport AND camera feeds */}
         <mesh ref={(m) => m?.layers.enable(1)} position={[0.15, -0.026, 0.15]}>
           <boxGeometry args={[1.1, 0.05, 1.1]} />
           <meshStandardMaterial color="#a9a292" roughness={0.7} metalness={0.05} />
@@ -96,7 +169,6 @@ export function RobotViewer({ robot, boxPosition, onBoxMove, captureRefs }: Robo
           fadeStrength={1.6}
           infiniteGrid
         />
-        {/* PlayCanvas/Blender-style orientation gizmo (东南西北) */}
         <GizmoHelper alignment="top-right" margin={[64, 64]}>
           <GizmoViewport axisColors={["#ef4444", "#22c55e", "#3b82f6"]} labelColor="#e5e7eb" />
         </GizmoHelper>

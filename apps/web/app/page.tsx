@@ -6,12 +6,11 @@ import { useGraspEditor } from "../lib/useGraspEditor";
 import { entriesFromFileList, entriesFromZip, entriesFromDataTransfer } from "../lib/fileInput";
 import { PRESETS } from "../lib/presets";
 import { MenuBar } from "../components/MenuBar";
-import { SceneOutliner, type SceneNode } from "../components/SceneOutliner";
+import { SceneOutliner } from "../components/SceneOutliner";
 import { CameraPanel } from "../components/CameraPanel";
 import { Timeline } from "../components/Timeline";
 import { RobotViewer } from "../components/RobotViewer";
 import { LoadingOverlay } from "../components/LoadingOverlay";
-import { Bot, Box, Video, Grid3x3, Sun } from "lucide-react";
 
 export default function Page() {
   const r = useRobotSource();
@@ -46,15 +45,6 @@ export default function Page() {
     };
   }, [r.loadFiles]);
 
-  const sceneNodes: SceneNode[] = [
-    { id: "robot", label: r.source.label || "robot", icon: <Bot size={14} /> },
-    { id: "box", label: "Target box", icon: <Box size={14} /> },
-    { id: "cam-front", label: "Camera · front", icon: <Video size={14} /> },
-    { id: "cam-wrist", label: "Camera · wrist", icon: <Video size={14} /> },
-    { id: "grid", label: "Grid", icon: <Grid3x3 size={14} /> },
-    { id: "lights", label: "Lights", icon: <Sun size={14} /> },
-  ];
-
   return (
     <div className="grid h-screen grid-rows-[auto_1fr_auto] bg-[#0e1116]">
       <MenuBar
@@ -66,12 +56,26 @@ export default function Page() {
         onPickZip={handleZip}
       />
       <div className="grid grid-cols-[auto_1fr_auto] overflow-hidden">
-        <SceneOutliner nodes={sceneNodes} />
+        <SceneOutliner
+          robotLabel={r.source.label}
+          objects={ed.objects}
+          target={ed.target}
+          selectedId={ed.selectedId}
+          onSelect={ed.setSelectedId}
+          onAddCube={ed.addCube}
+          onAddTarget={ed.addTarget}
+          onRemoveObject={ed.removeObject}
+          onRemoveTarget={ed.removeTarget}
+        />
         <main className="relative">
           <RobotViewer
             robot={r.robot}
-            boxPosition={ed.boxPosition}
-            onBoxMove={ed.setBoxPosition}
+            objects={ed.objects}
+            target={ed.target}
+            selectedId={ed.selectedId}
+            onSelect={ed.setSelectedId}
+            onMoveObject={ed.moveObject}
+            onMoveTarget={ed.moveTarget}
             captureRefs={{ front: frontCamRef, top: topCamRef }}
           />
           {r.loading && <LoadingOverlay progress={r.progress} />}

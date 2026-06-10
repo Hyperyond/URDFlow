@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Vector3, Quaternion } from "three";
 import {
   findEndEffectorLink,
@@ -23,7 +23,10 @@ import { downloadJSON } from "./download";
 const smooth = (u: number) => u * u * (3 - 2 * u);
 
 export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
-  const [boxPosition, setBoxPosition] = useState<[number, number, number]>([0.3, 0.25, 0.3]);
+  const [objects, setObjects] = useState<{ id: string; position: [number, number, number] }[]>([]);
+  const [target, setTarget] = useState<[number, number, number] | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const idRef = useRef(0);
   const [keyframes, setKeyframes] = useState<Keyframe[]>([]);
   const [playhead, setPlayhead] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -45,27 +48,16 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     setError(null);
   }, [robot]);
 
-  // drop the target box onto the table once (gravity feel); it then rests on the surface
-  useEffect(() => {
-    const TABLE = 0.025; // box half-height on a table whose top is ~y=0
-    let raf = 0;
-    let v = 0;
-    let y = 0.25;
-    const drop = () => {
-      v += 0.0012;
-      y = Math.max(TABLE, y - v);
-      setBoxPosition((p) => [p[0], y, p[2]]);
-      if (y > TABLE) raf = requestAnimationFrame(drop);
-    };
-    raf = requestAnimationFrame(drop);
-    return () => cancelAnimationFrame(raf);
-  }, []);
-
   const generateGrasp = useCallback(() => {
     if (!robot) return;
-    const plan = planGrasp(robot, eeLink, jointNames, boxPosition, { candidates: 32, reachThreshold: 0.04 });
+    const cube = objects[0];
+    if (!cube) {
+      setError("先在左侧 Scene 添加一个正方体");
+      return;
+    }
+    const plan = planGrasp(robot, eeLink, jointNames, cube.position, { candidates: 32, reachThreshold: 0.04 });
     if (!plan) {
-      setError("目标不可达(超出工作空间),把方块拖近一点再试");
+      setError("目标不可达(超出工作空间),把正方体拖近一点再试");
       setKeyframes([]);
       return;
     }
@@ -75,10 +67,24 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     const ee = robot.links[eeLink];
     const hp = ee?.getWorldPosition(new Vector3());
     const hq = ee?.getWorldQuaternion(new Quaternion());
-    const kfs = buildGraspTrajectory(plan, {
+    let kfs = buildGraspTrajectory(plan, {
       homePos: hp ? [hp.x, hp.y, hp.z] : undefined,
       homeQuat: hq ? [hq.x, hq.y, hq.z, hq.w] : undefined,
     });
+    // with a target placement, continue into a place: move → lower → release → retreat
+    if (target) {
+      const last = kfs[kfs.length - 1]!;
+      const q = plan.graspQuat;
+      const above: [number, number, number] = [target[0], target[1] + 0.18, target[2]];
+      const at: [number, number, number] = [target[0], target[1] + 0.03, target[2]];
+      kfs = [
+        ...kfs,
+        { t: last.t + 1.2, position: above, quaternion: q, gripper: 1 },
+        { t: last.t + 2.0, position: at, quaternion: q, gripper: 1 },
+        { t: last.t + 2.6, position: at, quaternion: q, gripper: 0 },
+        { t: last.t + 3.4, position: above, quaternion: q, gripper: 0 },
+      ];
+    }
     setKeyframes(kfs);
     // joint-space tracks for the timeline curves (retarget a low-fps sampling)
     const curveSamples = sampleTrajectory(kfs, 20, smooth);
@@ -88,7 +94,7 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     setJointTracks(tracks);
     setPlayhead(0);
     setIsPlaying(true); // auto-play so the user sees the motion
-  }, [robot, eeLink, jointNames, boxPosition]);
+  }, [robot, eeLink, jointNames, objects, target]);
 
   useEffect(() => {
     if (!isPlaying || !robot || keyframes.length < 2) return;
@@ -124,8 +130,30 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
   }, [robot, eeLink, jointNames, keyframes]);
 
   return {
-    boxPosition,
-    setBoxPosition,
+    objects,
+    target,
+    selectedId,
+    setSelectedId,
+    addCube: () => {
+      const id = `cube-${idRef.current++}`;
+      setObjects((o) => {
+        const n = o.length;
+        return [
+          ...o,
+          { id, position: [0.25 + (n % 3) * 0.09, 0.025, 0.26 + Math.floor(n / 3) * 0.09] as [number, number, number] },
+        ];
+      });
+      setSelectedId(id);
+    },
+    addTarget: () => {
+      setTarget([0.12, 0.026, -0.02]);
+      setSelectedId("target");
+    },
+    removeObject: (id: string) => setObjects((o) => o.filter((x) => x.id !== id)),
+    removeTarget: () => setTarget(null),
+    moveObject: (id: string, p: [number, number, number]) =>
+      setObjects((o) => o.map((x) => (x.id === id ? { ...x, position: p } : x))),
+    moveTarget: (p: [number, number, number]) => setTarget(p),
     generateGrasp,
     keyframes,
     error,
