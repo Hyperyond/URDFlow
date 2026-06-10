@@ -1,3 +1,5 @@
+import "./globals.css";
+
 export const metadata = { title: "URDFlow" };
 
 export default function RootLayout({
@@ -9,7 +11,7 @@ export default function RootLayout({
     <html lang="en">
       {/* suppressHydrationWarning: browser extensions (e.g. Grammarly) inject
           attributes on <body>, causing benign hydration mismatches. */}
-      <body style={{ margin: 0 }} suppressHydrationWarning>
+      <body className="h-full bg-[#0a0b0d] text-zinc-200" suppressHydrationWarning>
         {children}
       </body>
     </html>
