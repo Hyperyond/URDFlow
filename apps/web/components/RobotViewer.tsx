@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Canvas } from "@react-three/fiber";
-import { OrbitControls, Grid, ContactShadows, TransformControls } from "@react-three/drei";
-import type { Mesh } from "three";
+import { OrbitControls, Grid, ContactShadows, TransformControls, SoftShadows } from "@react-three/drei";
+import { ACESFilmicToneMapping, type Mesh, type Object3D } from "three";
 import type { URDFRobot } from "@urdflow/urdf-web";
 
 export interface RobotViewerProps {
@@ -15,22 +15,55 @@ export interface RobotViewerProps {
 export function RobotViewer({ robot, boxPosition, onBoxMove }: RobotViewerProps) {
   // ref-callback into state so TransformControls mounts once the mesh exists
   const [boxMesh, setBoxMesh] = useState<Mesh | null>(null);
+
+  // URDF meshes don't cast/receive shadows by default — turn them on.
+  useEffect(() => {
+    robot?.traverse((o: Object3D) => {
+      const m = o as Mesh;
+      if (m.isMesh) {
+        m.castShadow = true;
+        m.receiveShadow = true;
+      }
+    });
+  }, [robot]);
+
   return (
     <div className="relative h-screen">
-      <Canvas camera={{ position: [1.3, 1.0, 1.3], fov: 50 }} style={{ height: "100vh", background: "#15171c" }}>
-        {/* Studio-ish lighting: sky/ground fill + key + rim. No HDR/network dep. */}
-        <hemisphereLight args={["#ffffff", "#3a3f4b", 1.0]} />
-        <ambientLight intensity={0.25} />
-        <directionalLight position={[5, 8, 4]} intensity={1.5} />
-        <directionalLight position={[-4, 3, -5]} intensity={0.5} />
+      <Canvas
+        shadows
+        dpr={[1, 2]}
+        camera={{ position: [1.4, 1.1, 1.4], fov: 50 }}
+        gl={{ toneMapping: ACESFilmicToneMapping, toneMappingExposure: 1.05, antialias: true }}
+        style={{ height: "100vh", background: "#0e1014" }}
+      >
+        <SoftShadows size={28} samples={12} focus={0.6} />
+
+        {/* sky/ground fill + warm key (shadow caster) + cool rim */}
+        <hemisphereLight args={["#dfe7ff", "#20242c", 0.7]} />
+        <ambientLight intensity={0.12} />
+        <directionalLight
+          position={[4, 7, 3]}
+          intensity={2.1}
+          color="#fff4e6"
+          castShadow
+          shadow-mapSize={[2048, 2048]}
+          shadow-bias={-0.0002}
+          shadow-camera-left={-1.5}
+          shadow-camera-right={1.5}
+          shadow-camera-top={1.5}
+          shadow-camera-bottom={-1.5}
+          shadow-camera-near={0.5}
+          shadow-camera-far={20}
+        />
+        <directionalLight position={[-5, 3, -4]} intensity={0.45} color="#9db4ff" />
 
         {robot && <primitive object={robot} />}
 
         {/* Draggable target box — user positions it, planGrasp aims for it. */}
         {boxPosition && (
-          <mesh ref={setBoxMesh} position={boxPosition}>
+          <mesh ref={setBoxMesh} position={boxPosition} castShadow>
             <boxGeometry args={[0.05, 0.05, 0.05]} />
-            <meshStandardMaterial color="#22d3ee" emissive="#0e7490" emissiveIntensity={0.4} />
+            <meshStandardMaterial color="#22d3ee" emissive="#0e7490" emissiveIntensity={0.4} roughness={0.4} />
           </mesh>
         )}
         {boxMesh && boxPosition && (
@@ -45,10 +78,22 @@ export function RobotViewer({ robot, boxPosition, onBoxMove }: RobotViewerProps)
           />
         )}
 
-        {/* Fake contact shadow grounds the arm without per-mesh shadow flags. */}
-        <ContactShadows position={[0, 0.001, 0]} opacity={0.5} scale={4} blur={2.4} far={3} />
-        <Grid args={[10, 10]} cellColor="#23262e" sectionColor="#363b46" fadeDistance={18} fadeStrength={1.5} infiniteGrid />
-        <OrbitControls makeDefault target={[0, 0.45, 0]} />
+        {/* Matte ground receiving shadows, with grid + soft contact shadow on top */}
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
+          <planeGeometry args={[40, 40]} />
+          <meshStandardMaterial color="#15181e" roughness={0.96} metalness={0} />
+        </mesh>
+        <ContactShadows position={[0, 0.002, 0]} opacity={0.45} scale={5} blur={2.6} far={3} />
+        <Grid
+          args={[10, 10]}
+          position={[0, 0.001, 0]}
+          cellColor="#23262e"
+          sectionColor="#3a4150"
+          fadeDistance={20}
+          fadeStrength={1.6}
+          infiniteGrid
+        />
+        <OrbitControls makeDefault target={[0, 0.45, 0]} minDistance={0.6} maxDistance={6} />
       </Canvas>
     </div>
   );
