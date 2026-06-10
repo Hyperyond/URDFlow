@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, type ReactNode } from "react";
+import { Boxes } from "lucide-react";
 import type { RobotPreset } from "../lib/presets";
 
 export interface MenuBarProps {
@@ -28,13 +29,13 @@ function MenuButton({
       <button
         onClick={onClick}
         className={`rounded px-2 py-1 transition-colors ${
-          active ? "bg-white/10 text-zinc-100" : "text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
+          active ? "bg-white/15 text-zinc-100" : "text-zinc-300 hover:bg-white/10 hover:text-zinc-100"
         }`}
       >
         {label}
       </button>
       {active && (
-        <div className="absolute left-0 top-full z-30 mt-1 min-w-44 rounded-md border border-white/10 bg-[#13161c] py-1 shadow-xl">
+        <div className="absolute left-0 top-full z-30 mt-1 min-w-44 rounded-md border border-white/10 bg-[#1d222b] py-1 shadow-2xl">
           {children}
         </div>
       )}
@@ -49,8 +50,11 @@ export function MenuBar({ robotLabel, presets, uploaded, onPickPreset, onPickFil
   const toggle = (m: string) => setOpen((o) => (o === m ? null : m));
 
   return (
-    <header className="relative z-20 flex h-10 items-center gap-1 border-b border-white/[0.06] bg-[#0c0e12] px-3 text-xs">
-      <span className="mr-3 font-semibold tracking-tight text-zinc-100">URDFlow</span>
+    <header className="relative z-20 flex h-10 items-center gap-1 border-b border-white/10 bg-[#181b22] px-3 text-xs">
+      <span className="mr-3 flex items-center gap-1.5 font-semibold tracking-tight text-zinc-100">
+        <Boxes size={15} className="text-accent" />
+        URDFlow
+      </span>
 
       {/* Import lives here as the "easter egg" under File */}
       <MenuButton label="File" active={open === "file"} onClick={() => toggle("file")}>
@@ -59,7 +63,7 @@ export function MenuBar({ robotLabel, presets, uploaded, onPickPreset, onPickFil
             folderRef.current?.click();
             setOpen(null);
           }}
-          className="block w-full px-3 py-1.5 text-left text-zinc-300 hover:bg-white/5"
+          className="block w-full px-3 py-1.5 text-left text-zinc-300 hover:bg-white/10"
         >
           导入机器人文件夹…
         </button>
@@ -68,7 +72,7 @@ export function MenuBar({ robotLabel, presets, uploaded, onPickPreset, onPickFil
             zipRef.current?.click();
             setOpen(null);
           }}
-          className="block w-full px-3 py-1.5 text-left text-zinc-300 hover:bg-white/5"
+          className="block w-full px-3 py-1.5 text-left text-zinc-300 hover:bg-white/10"
         >
           导入 .zip…
         </button>
@@ -82,7 +86,7 @@ export function MenuBar({ robotLabel, presets, uploaded, onPickPreset, onPickFil
               onPickPreset(p);
               setOpen(null);
             }}
-            className={`block w-full px-3 py-1.5 text-left hover:bg-white/5 ${
+            className={`block w-full px-3 py-1.5 text-left hover:bg-white/10 ${
               robotLabel === p.name ? "text-accent" : "text-zinc-300"
             }`}
           >
@@ -96,7 +100,7 @@ export function MenuBar({ robotLabel, presets, uploaded, onPickPreset, onPickFil
         ))}
       </MenuButton>
 
-      <span className="ml-auto font-mono text-zinc-500">{robotLabel}</span>
+      <span className="ml-auto font-mono text-zinc-400">{robotLabel}</span>
 
       <input
         ref={folderRef}

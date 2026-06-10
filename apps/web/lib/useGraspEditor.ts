@@ -29,6 +29,7 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [loop, setLoop] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [jointTracks, setJointTracks] = useState<{ name: string; values: number[] }[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const eeLink = useMemo(() => (robot ? findEndEffectorLink(robot) : ""), [robot]);
@@ -38,6 +39,7 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
 
   useEffect(() => {
     setKeyframes([]);
+    setJointTracks([]);
     setPlayhead(0);
     setIsPlaying(false);
     setError(null);
@@ -62,6 +64,12 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
       homeQuat: hq ? [hq.x, hq.y, hq.z, hq.w] : undefined,
     });
     setKeyframes(kfs);
+    // joint-space tracks for the timeline curves (retarget a low-fps sampling)
+    const curveSamples = sampleTrajectory(kfs, 20, smooth);
+    const jf = retargetTrajectory(robot, eeLink, jointNames, curveSamples, { iterations: 20, lambda: 0.06 });
+    const tracks = jointNames.map((n) => ({ name: n, values: jf.map((f) => f.joints[n] ?? 0) }));
+    tracks.push({ name: "gripper", values: jf.map((f) => f.gripper) });
+    setJointTracks(tracks);
     setPlayhead(0);
     setIsPlaying(true); // auto-play so the user sees the motion
   }, [robot, eeLink, jointNames, boxPosition]);
@@ -125,6 +133,7 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     toggleLoop: () => setLoop((l) => !l),
     isRecording,
     toggleRecord: () => setIsRecording((v) => !v),
+    jointTracks,
     exportEpisode,
   };
 }

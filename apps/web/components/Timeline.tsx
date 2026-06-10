@@ -1,10 +1,12 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { Circle, Play, Pause, Square, Repeat, Download } from "lucide-react";
 import type { Keyframe } from "@urdflow/urdf-web";
 
 export interface TimelineProps {
   keyframes: Keyframe[];
+  jointTracks: { name: string; values: number[] }[];
   playhead: number;
   duration: number;
   isPlaying: boolean;
@@ -33,8 +35,8 @@ function TBtn({
     <button
       title={title}
       onClick={onClick}
-      className={`grid h-7 w-7 place-items-center rounded text-sm transition-colors ${
-        active ? "bg-white/10 text-zinc-100" : "text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
+      className={`grid h-7 w-7 place-items-center rounded transition-colors ${
+        active ? "bg-white/15 text-zinc-100" : "text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
       }`}
     >
       {children}
@@ -42,22 +44,36 @@ function TBtn({
   );
 }
 
-function GripperTrack({ keyframes, duration }: { keyframes: Keyframe[]; duration: number }) {
-  const pts = keyframes
-    .map((k) => `${(k.t / duration) * 100},${28 - k.gripper * 22}`)
-    .join(" ");
+const hueOf = (i: number) => (i * 47) % 360;
+
+function Curves({ tracks }: { tracks: { name: string; values: number[] }[] }) {
   return (
     <svg className="h-full w-full" preserveAspectRatio="none" viewBox="0 0 100 30">
-      <polyline points={pts} fill="none" stroke="#22d3ee" strokeWidth="1" vectorEffect="non-scaling-stroke" />
-      {keyframes.map((k, i) => (
-        <circle key={i} cx={(k.t / duration) * 100} cy={28 - k.gripper * 22} r="0.8" fill="#22d3ee" />
-      ))}
+      {tracks.map((tr, ti) => {
+        const n = tr.values.length;
+        if (n < 2) return null;
+        const min = Math.min(...tr.values);
+        const max = Math.max(...tr.values);
+        const span = max - min || 1;
+        const pts = tr.values.map((v, i) => `${(i / (n - 1)) * 100},${27 - ((v - min) / span) * 22}`).join(" ");
+        return (
+          <polyline
+            key={tr.name}
+            points={pts}
+            fill="none"
+            stroke={`hsl(${hueOf(ti)} 80% 62%)`}
+            strokeWidth="1"
+            vectorEffect="non-scaling-stroke"
+          />
+        );
+      })}
     </svg>
   );
 }
 
 export function Timeline({
   keyframes,
+  jointTracks,
   playhead,
   duration,
   isPlaying,
@@ -70,48 +86,64 @@ export function Timeline({
   onToggleLoop,
   onExport,
 }: TimelineProps) {
-  const pct = duration > 0 ? (playhead / duration) * 100 : 0;
+  const pct = duration > 0 ? playhead / duration : 0;
+  const hasCurves = jointTracks.length > 0;
   return (
-    <div className="flex h-40 flex-col border-t border-white/[0.06] bg-[#0c0e12]">
+    <div className="flex h-44 flex-col border-t border-white/10 bg-[#181b22]">
       {/* transport bar */}
-      <div className="flex items-center gap-1 border-b border-white/[0.06] px-3 py-1.5">
+      <div className="flex items-center gap-1 border-b border-white/10 px-3 py-1.5">
         <TBtn title="录制" active={isRecording} onClick={onRecord}>
-          <span className={isRecording ? "text-red-400" : "text-zinc-400"}>●</span>
+          <Circle size={15} className={isRecording ? "fill-red-500 text-red-500" : ""} />
         </TBtn>
         <TBtn title={isPlaying ? "暂停" : "播放"} onClick={isPlaying ? onPause : onPlay}>
-          {isPlaying ? "⏸" : "▶"}
+          {isPlaying ? <Pause size={16} /> : <Play size={16} />}
         </TBtn>
         <TBtn title="停止" onClick={onStop}>
-          ⏹
+          <Square size={15} />
         </TBtn>
         <TBtn title="循环" active={loop} onClick={onToggleLoop}>
-          🔁
+          <Repeat size={15} />
         </TBtn>
-        <span className="ml-2 font-mono text-[11px] text-zinc-500">
+        <span className="ml-2 font-mono text-[11px] text-zinc-400">
           {playhead.toFixed(2)} / {duration.toFixed(2)}s
         </span>
         <button
           onClick={onExport}
-          className="ml-auto rounded px-2 py-1 text-[11px] text-zinc-300 transition-colors hover:bg-white/5"
+          className="ml-auto flex items-center gap-1.5 rounded bg-white/5 px-2.5 py-1 text-[11px] text-zinc-200 transition-colors hover:bg-white/10"
         >
-          导出 episode.zip
+          <Download size={13} /> episode.zip
         </button>
       </div>
 
-      {/* track / curves */}
+      {/* per-joint curves + playhead */}
       <div className="relative flex-1 overflow-hidden px-3 py-2">
-        <div className="mb-1 text-[10px] uppercase tracking-wider text-zinc-600">gripper</div>
-        {keyframes.length < 2 ? (
-          <div className="grid h-full place-items-center text-[11px] text-zinc-600">
+        {hasCurves ? (
+          <>
+            <div className="mb-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[9px] text-zinc-500">
+              {jointTracks.map((tr, ti) => (
+                <span key={tr.name} className="flex items-center gap-1">
+                  <span
+                    className="inline-block h-1.5 w-1.5 rounded-full"
+                    style={{ background: `hsl(${hueOf(ti)} 80% 62%)` }}
+                  />
+                  {tr.name}
+                </span>
+              ))}
+            </div>
+            <div className="h-[calc(100%-1.25rem)]">
+              <Curves tracks={jointTracks} />
+            </div>
+            {duration > 0 && (
+              <div
+                className="pointer-events-none absolute inset-y-0 w-px bg-accent"
+                style={{ left: `calc(0.75rem + (100% - 1.5rem) * ${pct})` }}
+              />
+            )}
+          </>
+        ) : (
+          <div className="grid h-full place-items-center text-[11px] text-zinc-500">
             ▶ 播放即自动规划抓取并运行（无需人工生成）
           </div>
-        ) : (
-          <div className="h-[calc(100%-1rem)]">
-            <GripperTrack keyframes={keyframes} duration={duration} />
-          </div>
-        )}
-        {duration > 0 && (
-          <div className="pointer-events-none absolute inset-y-0 w-px bg-accent" style={{ left: `calc(0.75rem + ${pct}% * 0.92)` }} />
         )}
       </div>
     </div>

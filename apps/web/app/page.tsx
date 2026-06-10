@@ -11,6 +11,7 @@ import { CameraPanel } from "../components/CameraPanel";
 import { Timeline } from "../components/Timeline";
 import { RobotViewer } from "../components/RobotViewer";
 import { LoadingOverlay } from "../components/LoadingOverlay";
+import { Bot, Box, Video, Grid3x3, Sun } from "lucide-react";
 
 export default function Page() {
   const r = useRobotSource();
@@ -44,16 +45,16 @@ export default function Page() {
   }, [r.loadFiles]);
 
   const sceneNodes: SceneNode[] = [
-    { id: "robot", label: r.source.label || "robot", icon: "🤖" },
-    { id: "box", label: "Target box", icon: "◼" },
-    { id: "cam-front", label: "Camera · front", icon: "🎥" },
-    { id: "cam-wrist", label: "Camera · wrist", icon: "🎥" },
-    { id: "grid", label: "Grid", icon: "▦" },
-    { id: "lights", label: "Lights", icon: "✦" },
+    { id: "robot", label: r.source.label || "robot", icon: <Bot size={14} /> },
+    { id: "box", label: "Target box", icon: <Box size={14} /> },
+    { id: "cam-front", label: "Camera · front", icon: <Video size={14} /> },
+    { id: "cam-wrist", label: "Camera · wrist", icon: <Video size={14} /> },
+    { id: "grid", label: "Grid", icon: <Grid3x3 size={14} /> },
+    { id: "lights", label: "Lights", icon: <Sun size={14} /> },
   ];
 
   return (
-    <div className="grid h-screen grid-rows-[auto_1fr_auto] bg-[#0a0b0d]">
+    <div className="grid h-screen grid-rows-[auto_1fr_auto] bg-[#0e1116]">
       <MenuBar
         robotLabel={r.source.label}
         presets={PRESETS}
@@ -82,6 +83,7 @@ export default function Page() {
       </div>
       <Timeline
         keyframes={ed.keyframes}
+        jointTracks={ed.jointTracks}
         playhead={ed.playhead}
         duration={ed.duration}
         isPlaying={ed.isPlaying}

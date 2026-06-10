@@ -21,7 +21,7 @@ export function RobotViewer({ robot, boxPosition, onBoxMove }: RobotViewerProps)
       <Canvas
         camera={{ position: [1.4, 1.1, 1.4], fov: 50 }}
         gl={{ toneMapping: ACESFilmicToneMapping, toneMappingExposure: 1.15, antialias: true }}
-        style={{ height: "100%", width: "100%", background: "#14171d" }}
+        style={{ height: "100%", width: "100%", background: "#1b1f27" }}
       >
         {/* sky/ground fill + warm key + cool rim — brighter, no shadow-map (kept simple) */}
         <hemisphereLight args={["#eaf0ff", "#2a2f38", 1.1]} />
