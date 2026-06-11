@@ -25,6 +25,10 @@ export interface PlanGraspOptions {
   clearance?: number;
   /** Joint-space pose used for the IK null-space bias and the cost reference. */
   restPose?: number[];
+  /** Null-space pull strength toward restPose (default 0.03). */
+  restGain?: number;
+  /** Extra per-joint clamps (e.g. keep a humanoid torso near upright). */
+  limits?: Record<string, { lower: number; upper: number }>;
   /** Orientation-error weight; defaults to 0.3 for under-actuated arms (< 6 joints), else 1. */
   rotWeight?: number;
   /** Lift waypoint height validated per candidate, so the whole pick stays trackable. */
@@ -74,7 +78,8 @@ export function planGrasp(
     iterations: 40,
     lambda: 0.06,
     restPose: rest,
-    restGain: 0.03,
+    restGain: opts.restGain ?? 0.03,
+    limits: opts.limits,
     tcpOffset: opts.tcpOffset,
     rotWeight,
     // guard relative to the object's own height — table-top scenes and robots whose

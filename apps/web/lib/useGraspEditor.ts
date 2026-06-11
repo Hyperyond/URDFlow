@@ -6,10 +6,7 @@ import {
   findToolFrame,
   findKinematicChains,
   chainGrippers,
-  isMobileBase,
   applyBasePose,
-  computeApproachBase,
-  planBasePath,
   planGrasp,
   buildGraspTrajectory,
   carryQuat,
@@ -24,7 +21,6 @@ import {
   calibrateGripper,
   applyGripperCalibrated,
   type BasePose,
-  type RectObstacle,
   type GripperCalibration,
   type KinematicChain,
   type ToolFrame,
@@ -43,9 +39,6 @@ export const CUBE_SIZE = 0.05;
 const CUBE_HALF = CUBE_SIZE / 2;
 /** The gripper only actually grabs when the TCP is this close to the cube center. */
 const GRASP_RADIUS = 0.06;
-/** Base glide speed (m/s) and turn speed (rad/s) for the walk-approach phase. */
-const WALK_SPEED = 0.5;
-const TURN_SPEED = 1.4;
 
 export interface SceneObject {
   id: string;
@@ -124,6 +117,7 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
   const calibByChainRef = useRef(new Map<number, GripperCalibration | null>());
   const fullReadyRef = useRef<Record<string, number> | null>(null);
   const restRef = useRef<number[] | null>(null);
+  const softLimitsRef = useRef<Record<string, { lower: number; upper: number }>>({});
   const carriedRef = useRef(false);
   const grabbedRef = useRef(false);
   const segmentsRef = useRef<ProgramSegment[]>([]);
@@ -146,7 +140,6 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
   const [error, setError] = useState<string | null>(null);
 
   const activeChain = chains[activeChainIdx] ?? null;
-  const mobile = useMemo(() => (robot ? isMobileBase(robot, chains) : false), [robot, chains]);
   // gripper joints scoped to the active chain — a humanoid's other hand stays put
   const gripperJoints = useMemo<GripperJoint[]>(() => {
     if (!robot) return [];
@@ -319,7 +312,8 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
           lambda: 0.06,
           tcpOffset: tool.offset,
           restPose: rest,
-          restGain: 0.02,
+          restGain: names.length >= 8 ? 0.06 : 0.02,
+          limits: softLimitsRef.current,
           rotWeight,
           floorY: surfaceYRef.current + 0.008,
         });
@@ -385,6 +379,15 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     if (calib) applyGripperCalibrated(robot, calib, 0, CUBE_SIZE); // start truly open
     const rest = names.map((n) => robot.joints[n]!.angle as number);
     restRef.current = rest;
+    // humanoid chains include the torso — pin it near upright (soft ±0.35 rad around
+    // ready) so IK can never fold the body or sling the arm behind the back
+    const softLimits: Record<string, { lower: number; upper: number }> = {};
+    if (names.length >= 8) {
+      for (let k = 0; k < names.length - 7; k++) {
+        softLimits[names[k]!] = { lower: rest[k]! - 0.35, upper: rest[k]! + 0.35 };
+      }
+    }
+    softLimitsRef.current = softLimits;
 
     const tgts = targetsRef.current;
     const segments: ProgramSegment[] = [];
@@ -413,46 +416,6 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     const az0 = anchorW.z - curBase.z;
     const anchorLocal: [number, number] = [ax0 * c0 + az0 * s0, -ax0 * s0 + az0 * c0];
     const anchorR = Math.hypot(...anchorLocal);
-    const heading = (x: number, z: number) => Math.atan2(x, z);
-    // the work table is a base obstacle: never glide through it
-    const obstacles: RectObstacle[] = [];
-    if (surfaceYRef.current > 0) {
-      const pts = [...cubes, ...tgts].map((o) => o.position);
-      if (pts.length) {
-        obstacles.push({
-          minX: Math.min(...pts.map((p) => p[0])) - 0.14,
-          maxX: Math.max(...pts.map((p) => p[0])) + 0.14,
-          minZ: Math.min(...pts.map((p) => p[2])) - 0.14,
-          maxZ: Math.max(...pts.map((p) => p[2])) + 0.14,
-        });
-      }
-    }
-    /** Glide (around obstacles) until the hand's hover anchor lands on destXZ. */
-    const walkTo = (destXZ: [number, number], tStart: number): number => {
-      const goal = computeApproachBase(curBase, [
-        curBase.x + anchorLocal[0] * Math.cos(curBase.yaw) + anchorLocal[1] * Math.sin(curBase.yaw),
-        curBase.z - anchorLocal[0] * Math.sin(curBase.yaw) + anchorLocal[1] * Math.cos(curBase.yaw),
-      ], destXZ);
-      const legs = planBasePath([curBase.x, curBase.z], [goal.x, goal.z], obstacles, 0.3);
-      let t = tStart;
-      for (let li = 0; li < legs.length; li++) {
-        const [lx, lz] = legs[li]!;
-        const lastLeg = li === legs.length - 1;
-        // face along the travel direction mid-route; assume the approach yaw at the end
-        const dirX = lx - curBase.x;
-        const dirZ = lz - curBase.z;
-        const yaw = lastLeg ? goal.yaw : heading(dirX, dirZ) - heading(anchorLocal[0], anchorLocal[1]);
-        const next: BasePose = { x: lx, z: lz, yaw };
-        const dist = Math.hypot(dirX, dirZ);
-        const turn = Math.abs(lerpAngle(curBase.yaw, yaw, 1) - curBase.yaw);
-        const dur = Math.max(0.6, dist / WALK_SPEED + turn / TURN_SPEED);
-        walks.push({ t0: t, t1: t + dur, from: { ...curBase }, to: next });
-        t += dur + 0.2;
-        curBase = next;
-      }
-      applyBasePose(robot, curBase);
-      return t;
-    };
     /** Can the arm hit p (position-only check) from the current base? Restores joints. */
     const canReach = (pnt: [number, number, number]): boolean => {
       const saved = names.map((n) => robot.joints[n]!.angle as number);
@@ -481,49 +444,38 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
         minApproachY: names.length >= 7 ? 0.6 : 0.25,
         clearance: surfaceYRef.current + CUBE_HALF,
         restPose: rest,
+        restGain: names.length >= 8 ? 0.06 : 0.03,
+        limits: softLimitsRef.current,
         openAxis: calib?.openAxis,
       });
 
     for (let i = 0; i < cubes.length; i++) {
       const cube = cubes[i]!;
       const target = tgts.length ? tgts[i % tgts.length]!.position : null;
-      // pick side: walk first when clearly out of reach, replan-after-walk as fallback
-      const cubeDist = Math.hypot(cube.position[0] - curBase.x, cube.position[2] - curBase.z);
-      if (mobile && cubeDist > anchorR * 1.35) {
-        tOffset = walkTo([cube.position[0], cube.position[2]], tOffset) + 0.1;
-      }
-      let plan = planOnce(cube.position);
-      if (!plan && mobile) {
-        tOffset = walkTo([cube.position[0], cube.position[2]], tOffset) + 0.1;
-        plan = planOnce(cube.position);
-      }
+      // kinematic glide-walking was removed (it faked locomotion and broke in every
+      // edge case) — real walking lands via the physics track. Until then anything
+      // out of reach gets an honest refusal, for every robot.
+      const plan = planOnce(cube.position);
       if (!plan) {
         if (cubes.length === 1) {
-          setError(
-            mobile ? "走近后仍不可达,换一只手或把方块挪一下" : "目标不可达(超出工作空间),把正方体拖近一点再试",
-          );
+          setError("目标不可达(超出手臂工作空间),把正方体拖近一点再试");
           setKeyframes([]);
           return;
         }
         skipped.push(i + 1);
         continue;
       }
-      // place side: a far target needs a carry-walk (mobile) or an honest refusal (fixed)
-      let placeWalk = false;
       if (target) {
         const tDist = Math.hypot(target[0] - curBase.x, target[2] - curBase.z);
         const placeOk = tDist <= anchorR * 1.35 && canReach([target[0], target[1] + 0.05, target[2]]);
         if (!placeOk) {
-          if (!mobile) {
-            if (cubes.length === 1) {
-              setError("放置点超出工作空间,把 target 拖近一点再试");
-              setKeyframes([]);
-              return;
-            }
-            skipped.push(i + 1);
-            continue;
+          if (cubes.length === 1) {
+            setError("放置点超出手臂工作空间,把 target 拖近一点再试");
+            setKeyframes([]);
+            return;
           }
-          placeWalk = true;
+          skipped.push(i + 1);
+          continue;
         }
       }
       // segment eases in from wherever the arm currently is
@@ -536,12 +488,7 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
       });
       if (target) {
         const last = seg[seg.length - 1]!;
-        let placeStart = last.t;
-        if (placeWalk) {
-          // glide while carrying: the walk window lives between the lift and the place
-          const walkEnd = walkTo([target[0], target[2]], tOffset + last.t + 0.2);
-          placeStart = walkEnd - tOffset + 0.1;
-        }
+        const placeStart = last.t;
         const q = carryQuat(plan.graspQuat, cube.position, target);
         const above: [number, number, number] = [
           target[0],
@@ -573,7 +520,8 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
         lambda: 0.06,
         tcpOffset: tool.offset,
         restPose: rest,
-        restGain: 0.02,
+        restGain: names.length >= 8 ? 0.06 : 0.02,
+        limits: softLimitsRef.current,
         rotWeight: localRotWeight,
         floorY: surfaceYRef.current + 0.008,
       });
@@ -621,7 +569,6 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     autoHand,
     jointNames,
     gripperJoints,
-    mobile,
     toolFor,
     sceneFingerprint,
     solveTracks,
@@ -657,7 +604,8 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
           lambda: 0.06,
           tcpOffset: tool.offset,
           restPose: restRef.current ?? undefined,
-          restGain: 0.02,
+          restGain: jointNames.length >= 8 ? 0.06 : 0.02,
+          limits: softLimitsRef.current,
           rotWeight,
           floorY: surfaceYRef.current + 0.008,
         });
@@ -755,9 +703,8 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     const { tool } = toolFor(activeChainIdx);
     const [x, z] = spawnSpot(robot, tool.link ? tool : null, 0);
     const arm = Math.max(0.18, Math.hypot(x, z) * 1.15);
-    // legged robots can walk: let scenes spread beyond the arm so the approach shows
-    return { x, z, radius: mobile ? arm * 2.2 : arm };
-  }, [robot, mobile, activeChainIdx, toolFor]);
+    return { x, z, radius: arm };
+  }, [robot, activeChainIdx, toolFor]);
 
   return {
     objects,

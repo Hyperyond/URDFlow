@@ -200,6 +200,17 @@ export function RobotViewer({
             else if (bx >= maxX) maxX = Math.min(maxX, bx - CLEAR);
             if (bz <= minZ) minZ = Math.max(minZ, bz + CLEAR);
             else if (bz >= maxZ) maxZ = Math.min(maxZ, bz - CLEAR);
+            // robot standing amid the content (cubes dragged to both sides): retreat the
+            // slab from the robot along whichever axis costs the least table area
+            if (bx > minX && bx < maxX && bz > minZ && bz < maxZ) {
+              const cuts = [
+                { keep: () => (minX = bx + CLEAR), cost: bx + CLEAR - minX },
+                { keep: () => (maxX = bx - CLEAR), cost: maxX - (bx - CLEAR) },
+                { keep: () => (minZ = bz + CLEAR), cost: bz + CLEAR - minZ },
+                { keep: () => (maxZ = bz - CLEAR), cost: maxZ - (bz - CLEAR) },
+              ];
+              cuts.sort((a, b) => a.cost - b.cost)[0]!.keep();
+            }
             const w = Math.max(0.3, maxX - minX);
             const d = Math.max(0.3, maxZ - minZ);
             return (
