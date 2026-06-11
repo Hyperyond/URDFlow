@@ -41,3 +41,5 @@ env/
 *.swp
 .idea/
 .vscode/
+apps/web/public/mujoco.wasm
+apps/web/public/mujoco.mjs
