@@ -34,7 +34,9 @@ import {
   motionFromNpz,
   fitJointCount,
   sampleAt,
+  analyzeClip,
   type MotionClip,
+  type QCReport,
   type URDFRobot,
 } from "@urdflow/urdf-web";
 
@@ -69,12 +71,17 @@ async function loadSceneURDF(url: string): Promise<URDFRobot> {
   });
 }
 
+interface SceneAsset {
+  urdf: string;
+  /** welded to the world, or following the clip's object pose */
+  attach: "world" | "object";
+}
+
 interface Sample {
   id: string;
   name: string;
   npz: string;
-  /** optional scene asset: a URDF welded to the world or following the object pose */
-  scene?: { urdf: string; attach: "world" | "object" };
+  scenes?: SceneAsset[];
 }
 
 const SAMPLES: Sample[] = [
@@ -82,17 +89,22 @@ const SAMPLES: Sample[] = [
     id: "climb_00",
     name: "G1 爬越地形",
     npz: "/datasets/omniretarget/climb_00.npz",
-    scene: { urdf: "/datasets/omniretarget/climb_00_terrain.urdf", attach: "world" },
+    scenes: [{ urdf: "/datasets/omniretarget/climb_00/terrain.urdf", attach: "world" }],
   },
   {
     id: "chair_carry",
     name: "G1 搬运椅子",
     npz: "/datasets/omniretarget/chair_carry.npz",
-    scene: { urdf: "/datasets/omniretarget/chair_scaled_1.2.urdf", attach: "object" },
+    scenes: [
+      { urdf: "/datasets/omniretarget/chair_scaled_1.2.urdf", attach: "object" },
+      { urdf: "/datasets/omniretarget/scene_01/terrain.urdf", attach: "world" },
+    ],
   },
 ];
 
-const ROBOT_URDF = "/robots/g1/g1.urdf";
+// OmniRetarget clips were retargeted to the sphere-hand G1 (their visualize.py
+// uses g1_29dof_spherehand for terrain/object-terrain subsets)
+const ROBOT_URDF = "/robots/g1/g1_29dof_spherehand.urdf";
 const SPEEDS = [0.25, 0.5, 1, 2];
 
 /** movable (non-fixed, non-mimic) joint names in URDF declaration order */
@@ -116,13 +128,15 @@ export default function PlayerPage() {
   const [duration, setDuration] = useState(0);
   const [clipName, setClipName] = useState("");
   const [dragOver, setDragOver] = useState(false);
+  const [report, setReport] = useState<QCReport | null>(null);
+  const [qcOpen, setQcOpen] = useState(false);
 
   // refs shared with the render loop
   const clipRef = useRef<MotionClip | null>(null);
   const jointNamesRef = useRef<string[]>([]);
   const robotRef = useRef<URDFRobot | null>(null);
   const objectRef = useRef<Object3D | null>(null);
-  const sceneAssetRef = useRef<Object3D | null>(null);
+  const sceneAssetsRef = useRef<Object3D[]>([]);
   const sceneRef = useRef<Scene | null>(null);
   const timeRef = useRef(0);
   const playingRef = useRef(true);
@@ -148,33 +162,44 @@ export default function PlayerPage() {
     timeRef.current = 0;
     setDuration(fitted.duration);
     setTime(0);
+    setReport(null);
     setClipName(`${name} · ${fitted.frames} 帧 · ${fitted.fps}fps · ${fitted.duration.toFixed(1)}s${fitted.hasObject ? " · 含物体" : ""}`);
     setStatus("");
   }, []);
 
+  const runQC = useCallback(() => {
+    const robot = robotRef.current;
+    const clip = clipRef.current;
+    if (!robot || !clip) return;
+    // analyzeClip mutates the robot pose; the render loop re-applies it next frame
+    const r = analyzeClip(robot, clip, { jointNames: jointNamesRef.current });
+    setReport(r);
+    setQcOpen(true);
+  }, []);
+
   const loadSeqRef = useRef(0);
+  const clearSceneAssets = useCallback(() => {
+    for (const a of sceneAssetsRef.current) sceneRef.current?.remove(a);
+    sceneAssetsRef.current = [];
+    objectRef.current = null;
+  }, []);
   const loadSample = useCallback(
     async (sample: Sample) => {
       const seq = ++loadSeqRef.current;
       setStatus(`加载 ${sample.name}…`);
       const npzBuf = await fetch(sample.npz).then((r) => r.arrayBuffer());
       const clip = motionFromNpz(await parseNpz(npzBuf));
-      const asset = sample.scene ? await loadSceneURDF(sample.scene.urdf) : null;
+      const assets = await Promise.all((sample.scenes ?? []).map((s) => loadSceneURDF(s.urdf)));
       if (seq !== loadSeqRef.current) return; // a newer load superseded this one
-      // swap scene asset
-      if (sceneAssetRef.current) {
-        sceneRef.current?.remove(sceneAssetRef.current);
-        sceneAssetRef.current = null;
-        objectRef.current = null;
-      }
-      if (asset) {
+      clearSceneAssets();
+      assets.forEach((asset, i) => {
         sceneRef.current?.add(asset);
-        sceneAssetRef.current = asset;
-        if (sample.scene!.attach === "object") objectRef.current = asset;
-      }
+        sceneAssetsRef.current.push(asset);
+        if (sample.scenes![i]!.attach === "object") objectRef.current = asset;
+      });
       installClip(clip, sample.name);
     },
-    [installClip],
+    [installClip, clearSceneAssets],
   );
 
   // ---- three.js scene + render loop (mounted once) ----
@@ -307,19 +332,14 @@ export default function PlayerPage() {
       try {
         setStatus(`解析 ${file.name}…`);
         loadSeqRef.current++; // supersede any in-flight sample load
-        // dropped clips have no bundled scene asset
-        if (sceneAssetRef.current) {
-          sceneRef.current?.remove(sceneAssetRef.current);
-          sceneAssetRef.current = null;
-          objectRef.current = null;
-        }
+        clearSceneAssets(); // dropped clips have no bundled scene asset
         const clip = motionFromNpz(await parseNpz(await file.arrayBuffer()));
         installClip(clip, file.name);
       } catch (err) {
         setStatus(`解析失败: ${err instanceof Error ? err.message : String(err)}`);
       }
     },
-    [installClip],
+    [installClip, clearSceneAssets],
   );
 
   const fmt = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, "0")}`;
@@ -368,11 +388,89 @@ export default function PlayerPage() {
               {s.name}
             </button>
           ))}
+          <button
+            onClick={runQC}
+            className="rounded bg-emerald-600/90 px-3 py-1.5 font-semibold text-white hover:bg-emerald-500"
+          >
+            运行质检
+          </button>
           <a href="/" className="rounded bg-white/10 px-3 py-1.5 text-zinc-200 hover:bg-white/20">
             返回编辑器
           </a>
         </div>
       </div>
+
+      {/* QC report panel */}
+      {qcOpen && report && (
+        <div className="absolute right-3 top-3 flex max-h-[calc(100vh-120px)] w-80 flex-col rounded-xl border border-white/10 bg-black/75 text-sm text-zinc-200 backdrop-blur">
+          <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+            <span className="font-semibold">质检报告</span>
+            <button onClick={() => setQcOpen(false)} className="text-zinc-400 hover:text-white">
+              ✕
+            </button>
+          </div>
+          <div className="flex items-center gap-4 px-4 py-3">
+            <div
+              className={`text-4xl font-bold tabular-nums ${
+                report.score >= 90 ? "text-emerald-400" : report.score >= 70 ? "text-amber-400" : "text-red-400"
+              }`}
+            >
+              {report.score}
+            </div>
+            <div className="text-xs text-zinc-400">
+              <div>{report.frames} 帧 · {report.duration.toFixed(1)}s</div>
+              <div>{report.issues.length === 0 ? "未检出问题" : `${report.issues.length} 个问题`}</div>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2 px-4 pb-3 text-xs">
+            <div className="rounded bg-white/5 px-2 py-1.5">
+              <div className="text-zinc-500">滑脚累计</div>
+              <div className="tabular-nums">{(report.metrics.footSkateDistance * 100).toFixed(1)} cm</div>
+            </div>
+            <div className="rounded bg-white/5 px-2 py-1.5">
+              <div className="text-zinc-500">最深穿地</div>
+              <div className="tabular-nums">{(report.metrics.maxPenetration * 100).toFixed(1)} cm</div>
+            </div>
+            <div className="rounded bg-white/5 px-2 py-1.5">
+              <div className="text-zinc-500">超限帧数</div>
+              <div className="tabular-nums">{report.metrics.limitViolationFrames}</div>
+            </div>
+            <div className="rounded bg-white/5 px-2 py-1.5">
+              <div className="text-zinc-500">基座跳变</div>
+              <div className="tabular-nums">{report.metrics.teleportCount}</div>
+            </div>
+            <div className="col-span-2 rounded bg-white/5 px-2 py-1.5">
+              <div className="text-zinc-500">峰值抖动 (jerk)</div>
+              <div className="tabular-nums">
+                {report.metrics.peakJerk.toFixed(0)} rad/s³
+                {report.metrics.peakJerkJoint ? ` · ${report.metrics.peakJerkJoint}` : ""}
+              </div>
+            </div>
+          </div>
+          {report.issues.length > 0 && (
+            <div className="min-h-0 flex-1 overflow-y-auto border-t border-white/10">
+              {report.issues.map((issue, i) => (
+                <button
+                  key={i}
+                  onClick={() => {
+                    seekRef.current = issue.time;
+                    setPlaying(false);
+                  }}
+                  className="block w-full px-4 py-2 text-left text-xs hover:bg-white/10"
+                >
+                  <span
+                    className={`mr-2 inline-block h-2 w-2 rounded-full ${
+                      issue.severity > 0.6 ? "bg-red-400" : issue.severity > 0.3 ? "bg-amber-400" : "bg-yellow-200"
+                    }`}
+                  />
+                  <span className="tabular-nums text-zinc-500">{issue.time.toFixed(1)}s</span>{" "}
+                  <span className="text-zinc-300">{issue.detail}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* transport bar */}
       <div className="absolute bottom-4 left-1/2 flex w-[min(720px,92vw)] -translate-x-1/2 items-center gap-3 rounded-xl border border-white/10 bg-black/70 px-4 py-3 text-sm text-zinc-200 backdrop-blur">

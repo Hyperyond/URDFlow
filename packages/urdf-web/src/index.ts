@@ -28,3 +28,5 @@ export { parseNpy, parseNpz } from "./npz";
 export type { NpyArray } from "./npz";
 export { motionFromNpz, fitJointCount, frameAt, sampleAt } from "./motion";
 export type { MotionClip, MotionFrame, ZUpPose } from "./motion";
+export { analyzeClip, findFootLinks } from "./qc";
+export type { QCReport, QCIssue, QCIssueType, QCMetrics, QCOptions } from "./qc";
