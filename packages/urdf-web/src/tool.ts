@@ -1,6 +1,6 @@
 import { Box3, Matrix4, Vector3, type Object3D } from "three";
 import type { URDFRobot } from "urdf-loader";
-import { findGripperJoints } from "./gripper";
+import { findGripperJoints, type GripperJoint } from "./gripper";
 import { findEndEffectorLink } from "./ik";
 
 export interface ToolFrame {
@@ -22,15 +22,18 @@ const isLink = (o: unknown): boolean => (o as { isURDFLink?: boolean }).isURDFLi
  * Priority: explicit TCP-style leaf link in the URDF → palm link + fingertip-midpoint
  * computed from finger mesh bounds → plain leaf link (no gripper).
  */
-export function findToolFrame(robot: URDFRobot): ToolFrame {
-  // 1) the URDF already declares a tool frame (e.g. panda_hand_tcp, tool0)
-  for (const [name, link] of Object.entries(robot.links)) {
-    const leaf = !(link.children ?? []).some(isJoint);
-    if (leaf && TCP_RE.test(name)) return { link: name, offset: [0, 0, 0], axis: [0, 0, 1] };
+export function findToolFrame(robot: URDFRobot, gripSubset?: GripperJoint[]): ToolFrame {
+  // 1) the URDF already declares a tool frame (e.g. panda_hand_tcp, tool0) — only
+  // trusted when we're not scoped to a specific chain's hand (humanoids have two)
+  if (!gripSubset) {
+    for (const [name, link] of Object.entries(robot.links)) {
+      const leaf = !(link.children ?? []).some(isJoint);
+      if (leaf && TCP_RE.test(name)) return { link: name, offset: [0, 0, 0], axis: [0, 0, 1] };
+    }
   }
 
   // 2) jaw gripper: drive the palm, aim for the point between the fingertips
-  const grips = findGripperJoints(robot);
+  const grips = gripSubset ?? findGripperJoints(robot);
   if (grips.length > 0) {
     const joints = grips.map((g) => robot.joints[g.name]!).filter(Boolean);
     const palm = joints[0]?.parent as Object3D | undefined;

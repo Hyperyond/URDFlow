@@ -26,6 +26,8 @@ export interface RobotViewerProps {
   robot: URDFRobot | null;
   objects: SceneObj[];
   targets: { id: string; position: [number, number, number] }[];
+  /** Height of the work surface (0 = objects sit on the floor, no table rendered). */
+  surfaceY?: number;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   onMoveObject: (id: string, p: [number, number, number]) => void;
@@ -95,6 +97,7 @@ export function RobotViewer({
   robot,
   objects,
   targets,
+  surfaceY = 0,
   selectedId,
   onSelect,
   onMoveObject,
@@ -177,6 +180,21 @@ export function RobotViewer({
             onMove={(p) => onMoveTarget(t.id, p)}
           />
         ))}
+
+        {/* work table for tall robots (humanoids): centered under the scene objects */}
+        {surfaceY > 0 && (
+          <mesh
+            ref={(m) => m?.layers.enable(1)}
+            position={[
+              objects[0]?.position[0] ?? targets[0]?.position[0] ?? 0.35,
+              surfaceY - 0.015,
+              objects[0]?.position[2] ?? targets[0]?.position[2] ?? 0,
+            ]}
+          >
+            <boxGeometry args={[1.0, 0.03, 0.8]} />
+            <meshStandardMaterial color="#b9bec7" roughness={0.7} />
+          </mesh>
+        )}
 
         {/* large ground (both layers): robot + objects sit on it; in viewport AND camera feeds */}
         <mesh ref={(m) => m?.layers.enable(1)} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>

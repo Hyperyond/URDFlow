@@ -5,6 +5,7 @@ import { Object3D, Vector3, Quaternion } from "three";
 import { loadURDFFromString } from "../src/loadURDF";
 import { findToolFrame } from "../src/tool";
 import { findGripperJoints, calibrateGripper } from "../src/gripper";
+import { findKinematicChains, chainGrippers } from "../src/chains";
 import { stlMeshLoaderFor } from "./helpers/stlMeshes";
 import { naturalRestPose, solveIK, toolWorldPosition } from "../src/ik";
 import { planGrasp, buildGraspTrajectory, carryQuat } from "../src/grasp";
@@ -36,15 +37,18 @@ function runPickPlace(
   cube: [number, number, number],
   target: [number, number, number],
   ready?: Record<string, number>,
+  chain?: { joints: string[]; grippers: ReturnType<typeof findGripperJoints> },
 ): PipelineResult | null {
-  const grippers = findGripperJoints(robot);
+  const grippers = chain?.grippers ?? findGripperJoints(robot);
   const grip = new Set(grippers.map((g) => g.name));
-  const jointNames = Object.entries(robot.joints)
-    .filter(([, j]) => {
-      const t = (j as { jointType?: string }).jointType;
-      return (t === "revolute" || t === "continuous" || t === "prismatic") && !grip.has((j as { name: string }).name);
-    })
-    .map(([n]) => n);
+  const jointNames =
+    chain?.joints ??
+    Object.entries(robot.joints)
+      .filter(([, j]) => {
+        const t = (j as { jointType?: string }).jointType;
+        return (t === "revolute" || t === "continuous" || t === "prismatic") && !grip.has((j as { name: string }).name);
+      })
+      .map(([n]) => n);
   // ready pose (same path as the app)
   const fallback = naturalRestPose(robot, jointNames);
   jointNames.forEach((n, i) => robot.setJointValue(n, ready?.[n] ?? fallback[i]!));
@@ -52,7 +56,7 @@ function runPickPlace(
 
   // calibrated bite point when meshes are available (same priority as the app)
   const calib = calibrateGripper(robot, grippers);
-  let tool = findToolFrame(robot);
+  let tool = findToolFrame(robot, chain ? grippers : undefined);
   if (calib) {
     const len = Math.hypot(...calib.tcp);
     tool = {
@@ -85,8 +89,8 @@ function runPickPlace(
   });
   const last = kfs[kfs.length - 1]!;
   const q = carryQuat(plan.graspQuat, cube, target);
-  const above: [number, number, number] = [target[0], 0.025 + 0.18, target[2]];
-  const at: [number, number, number] = [target[0], 0.03, target[2]];
+  const above: [number, number, number] = [target[0], target[1] + 0.18, target[2]];
+  const at: [number, number, number] = [target[0], target[1] + 0.005, target[2]];
   kfs = [
     ...kfs,
     { t: last.t + 1.2, position: above, quaternion: q, gripper: 1 },
@@ -111,7 +115,7 @@ function runPickPlace(
       restPose: rest,
       restGain: 0.02,
       rotWeight,
-      floorY: 0.008,
+      floorY: Math.min(cube[1], target[1]) - 0.02,
     });
     const p = toolWorldPosition(robot, tool.link, tool.offset);
     minTCPy = Math.min(minTCPy, p.y);
@@ -122,7 +126,7 @@ function runPickPlace(
         Math.hypot(p.x - cube[0], p.y - cube[1], p.z - cube[2]),
       );
     }
-    if (prevClosed && !closed) released = [p.x, 0.025, p.z];
+    if (prevClosed && !closed) released = [p.x, target[1], p.z];
     prevClosed = closed;
     // track only segments that should be on-path (skip the big home transits where
     // intermediate error is fine) — measure at grasp & place dwell points
@@ -250,5 +254,34 @@ describe("replanning regression (the second-run bug)", () => {
     expect(r2!.graspDist).toBeLessThan(0.06);
     expect(Math.hypot(r2!.releasedAt[0] - 0.45, r2!.releasedAt[2] + 0.05)).toBeLessThan(0.02);
     expect(r2!.minTCPy).toBeGreaterThan(0.0);
+  });
+});
+
+describe("G1 humanoid (chain-scoped pick-and-place on a table)", () => {
+  it("drives one arm chain, calibrates that hand, and places on the table", { timeout: 60000 }, () => {
+    const robot = loadReal("g1/g1.urdf", true);
+    const chains = findKinematicChains(robot);
+    const arm = chains[0]!;
+    expect(arm.gripperJoints).toHaveLength(2);
+    const grippers = chainGrippers(robot, arm);
+    // raise the arm to a working pose in front of the chest before probing reach
+    const ready: Record<string, number> = {};
+    for (const j of arm.joints) ready[j] = 0;
+    const side = arm.joints.some((j) => j.startsWith("left_")) ? "left" : "right";
+    const sign = side === "left" ? 1 : -1;
+    ready[`${side}_shoulder_pitch_joint`] = -0.4;
+    ready[`${side}_shoulder_roll_joint`] = sign * 0.25;
+    ready[`${side}_elbow_joint`] = 0.9;
+    for (const [n, v] of Object.entries(ready)) robot.setJointValue(n, v);
+    robot.updateMatrixWorld(true);
+    const tool = findToolFrame(robot, grippers);
+    const tcp = toolWorldPosition(robot, tool.link, tool.offset);
+    // table-top cube right under the hand's hover point, slightly forward
+    const cube: [number, number, number] = [tcp.x * 1.05, tcp.y - 0.18, tcp.z * 1.05];
+    const target: [number, number, number] = [cube[0], cube[1] + 0.001, cube[2] + sign * 0.16];
+    const res = runPickPlace(robot, cube, target, ready, { joints: arm.joints, grippers });
+    expect(res).not.toBeNull();
+    expect(res!.graspDist).toBeLessThan(0.06);
+    expect(Math.hypot(res!.releasedAt[0] - target[0], res!.releasedAt[2] - target[2])).toBeLessThan(0.03);
   });
 });

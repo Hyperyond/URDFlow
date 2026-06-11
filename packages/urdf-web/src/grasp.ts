@@ -75,7 +75,9 @@ export function planGrasp(
     restGain: 0.03,
     tcpOffset: opts.tcpOffset,
     rotWeight,
-    floorY: clearance * 0.5,
+    // guard relative to the object's own height — table-top scenes and robots whose
+    // base frame isn't at ground level (humanoid pelvises) keep working
+    floorY: box.y - clearance * 0.5,
   };
   for (const dir of candidates) {
     // approaching from below the horizon means coming through the floor — never valid

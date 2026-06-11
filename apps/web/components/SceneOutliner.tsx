@@ -14,6 +14,9 @@ export interface SceneOutlinerProps {
   onRemoveObject: (id: string) => void;
   onRemoveTarget: (id: string) => void;
   onPromptScene: (prompt: string) => Promise<void>;
+  chains: { name: string; joints: string[]; gripperJoints: string[] }[];
+  activeChainIdx: number;
+  onPickChain: (idx: number) => void;
 }
 
 function Row({
@@ -64,6 +67,9 @@ export function SceneOutliner({
   onRemoveObject,
   onRemoveTarget,
   onPromptScene,
+  chains,
+  activeChainIdx,
+  onPickChain,
 }: SceneOutlinerProps) {
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
@@ -128,6 +134,21 @@ export function SceneOutliner({
       </div>
       <div className="flex flex-col gap-0.5 overflow-y-auto p-2">
         <Row icon={<Bot size={14} />} label={robotLabel || "robot"} />
+        {/* multi-chain robots (humanoids): pick which limb the program drives */}
+        {chains.length > 1 && (
+          <select
+            title="选择活动运动链"
+            value={activeChainIdx}
+            onChange={(e) => onPickChain(Number(e.target.value))}
+            className="mx-1 mb-1 rounded border border-white/10 bg-black/30 px-1.5 py-1 text-[11px] text-zinc-200 outline-none focus:border-cyan-400/40"
+          >
+            {chains.map((c, i) => (
+              <option key={i} value={i}>
+                {c.name} · {c.joints.length} 关节{c.gripperJoints.length ? " · 带夹爪" : ""}
+              </option>
+            ))}
+          </select>
+        )}
         {objects.map((o, i) => (
           <Row
             key={o.id}

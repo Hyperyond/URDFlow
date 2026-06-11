@@ -11,6 +11,8 @@ export type { Actuator, JointSignal } from "./mechatronics";
 export { findEndEffectorLink, numericJacobian, solveIK, naturalRestPose, toolWorldPosition } from "./ik";
 export type { SolveIKOptions } from "./ik";
 export { findToolFrame } from "./tool";
+export { findKinematicChains, chainGrippers } from "./chains";
+export type { KinematicChain } from "./chains";
 export type { ToolFrame } from "./tool";
 export { interpolateKeyframes, sampleTrajectory } from "./trajectory";
 export type { Keyframe, EEPoseSample } from "./trajectory";

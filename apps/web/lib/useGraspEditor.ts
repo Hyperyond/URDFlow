@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Quaternion } from "three";
 import {
   findToolFrame,
+  findKinematicChains,
+  chainGrippers,
   planGrasp,
   buildGraspTrajectory,
   carryQuat,
@@ -19,6 +21,7 @@ import {
   calibrateGripper,
   applyGripperCalibrated,
   type GripperCalibration,
+  type KinematicChain,
   type ToolFrame,
   type GripperJoint,
   type JointInfo,
@@ -104,6 +107,11 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
   const grabbedRef = useRef(false);
   const segmentsRef = useRef<ProgramSegment[]>([]);
   const planSceneRef = useRef<string | null>(null);
+  const [chains, setChains] = useState<KinematicChain[]>([]);
+  const [activeChainIdx, setActiveChainIdx] = useState(0);
+  const [surfaceY, setSurfaceY] = useState(0);
+  const surfaceYRef = useRef(0);
+  surfaceYRef.current = surfaceY;
   const [keyframes, setKeyframes] = useState<Keyframe[]>([]);
   const [playhead, setPlayhead] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -112,12 +120,19 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
   const [jointTracks, setJointTracks] = useState<{ name: string; values: number[] }[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  const gripperJoints = useMemo<GripperJoint[]>(() => (robot ? findGripperJoints(robot) : []), [robot]);
-  // arm joints only — gripper joints are driven separately, not used to reach the target
+  const activeChain = chains[activeChainIdx] ?? null;
+  // gripper joints scoped to the active chain — a humanoid's other hand stays put
+  const gripperJoints = useMemo<GripperJoint[]>(() => {
+    if (!robot) return [];
+    if (activeChain) return chainGrippers(robot, activeChain);
+    return findGripperJoints(robot);
+  }, [robot, activeChain]);
+  // arm joints of the active chain only — the rest of the body is frozen at ready
   const jointNames = useMemo(() => {
+    if (activeChain) return activeChain.joints;
     const grip = new Set(gripperJoints.map((g) => g.name));
     return model.map((m) => m.name).filter((n) => !grip.has(n));
-  }, [model, gripperJoints]);
+  }, [model, gripperJoints, activeChain]);
   // under-actuated arms (e.g. 5-DOF SO-101) can't meet a full 6D pose — relax orientation
   const rotWeight = jointNames.length < 6 ? 0.3 : 1;
   const duration = keyframes.length ? Math.max(...keyframes.map((k) => k.t)) : 0;
@@ -140,10 +155,40 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     setObjects([]);
     setTargets([]);
     setSelectedId(null);
+    const found = robot ? findKinematicChains(robot) : [];
+    setChains(found);
+    setActiveChainIdx(0);
+    setSurfaceY(0);
+  }, [robot]);
+
+  // tall robots (humanoids) work on a table: support surface goes under the hand.
+  // computed on demand — the viewer's ground-lift and mesh streaming settle late
+  const refreshSurface = useCallback((): number => {
+    if (!robot) return 0;
+    const grips = chains.length > 1 ? gripperJoints : undefined;
+    const tool = findToolFrame(robot, grips);
+    robot.updateMatrixWorld(true);
+    const tcp = toolWorldPosition(robot, tool.link, tool.offset);
+    const sy = tcp.y > 0.5 ? Math.min(0.8, +(tcp.y - 0.22).toFixed(2)) : 0;
+    surfaceYRef.current = sy;
+    setSurfaceY(sy);
+    return sy;
+  }, [robot, chains.length, gripperJoints]);
+
+  // ready baseline follows the active chain
+  useEffect(() => {
+    if (!robot) {
+      readyRef.current = null;
+      return;
+    }
     // the load-time pose is the reference posture every plan starts from (replanning
     // from playback leftovers accumulated drift — the "second run breaks" bug)
-    readyRef.current = robot ? jointNames.map((n) => robot.joints[n]!.angle as number) : null;
-  }, [robot, jointNames]);
+    readyRef.current = jointNames.map((n) => robot.joints[n]!.angle as number);
+    toolRef.current = null;
+    calibRef.current = null;
+    const t = setTimeout(refreshSurface, 450); // after the viewer's ground re-fit (~200ms)
+    return () => clearTimeout(t);
+  }, [robot, jointNames, refreshSurface]);
 
   // any scene edit invalidates the planned program — playing a trajectory that was
   // planned for the OLD cube/target positions is exactly the "second run breaks" bug
@@ -193,7 +238,7 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     // streaming by now); the calibrated bite point beats any name-based guess
     const calib = calibRef.current ?? calibrateGripper(robot, gripperJoints);
     calibRef.current = calib;
-    let tool = findToolFrame(robot);
+    let tool = findToolFrame(robot, chains.length > 1 ? gripperJoints : undefined);
     if (calib) {
       const len = Math.hypot(...calib.tcp);
       tool = {
@@ -234,8 +279,8 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
         approachWeight: 2.0,
         tcpOffset: tool.offset,
         toolAxis: tool.axis,
-        minApproachY: 0.25, // come from above the horizon — never through the floor
-        clearance: CUBE_HALF,
+        minApproachY: 0.25, // come from above the horizon — never through the support surface
+        clearance: surfaceYRef.current + CUBE_HALF,
         restPose: rest,
       });
       if (!plan) {
@@ -258,9 +303,9 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
       if (target) {
         const last = seg[seg.length - 1]!;
         const q = carryQuat(plan.graspQuat, cube.position, target);
-        const above: [number, number, number] = [target[0], Math.max(target[1], CUBE_HALF) + 0.18, target[2]];
+        const above: [number, number, number] = [target[0], Math.max(target[1], surfaceYRef.current + CUBE_HALF) + 0.18, target[2]];
         // carry the cube by its center (TCP = cube center): hover it just above its rest height
-        const at: [number, number, number] = [target[0], Math.max(target[1], CUBE_HALF) + 0.005, target[2]];
+        const at: [number, number, number] = [target[0], Math.max(target[1], surfaceYRef.current + CUBE_HALF) + 0.005, target[2]];
         seg = [
           ...seg,
           { t: last.t + 1.2, position: above, quaternion: q, gripper: 1 },
@@ -315,7 +360,7 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
       restPose: rest,
       restGain: 0.02,
       rotWeight,
-      floorY: 0.008,
+      floorY: surfaceYRef.current + 0.008,
     });
     const tracks = jointNames.map((n) => ({ name: n, values: jf.map((f) => f.joints[n] ?? 0) }));
     tracks.push({ name: "gripper", values: jf.map((f) => f.gripper) });
@@ -328,11 +373,11 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     playheadRef.current = 0;
     setPlayhead(0);
     setIsPlaying(true); // auto-play so the user sees the motion
-  }, [robot, jointNames, gripperJoints, rotWeight, sceneFingerprint]);
+  }, [robot, jointNames, gripperJoints, rotWeight, sceneFingerprint, chains.length]);
 
   useEffect(() => {
     if (!isPlaying || !robot || keyframes.length < 2) return;
-    const tool = toolRef.current ?? findToolFrame(robot);
+    const tool = toolRef.current ?? findToolFrame(robot, chains.length > 1 ? gripperJoints : undefined);
     toolRef.current = tool;
     // close only far enough to touch the cube faces — no finger/cube clipping
     const closure = closureForWidth(gripperJoints, CUBE_SIZE);
@@ -359,7 +404,7 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
         restPose: restRef.current ?? undefined,
         restGain: 0.02,
         rotWeight,
-        floorY: 0.008,
+        floorY: surfaceYRef.current + 0.008,
       });
       const calib = calibRef.current;
       if (calib) applyGripperCalibrated(robot, calib, pose.gripper, CUBE_SIZE);
@@ -382,10 +427,12 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
             o.map((x) => (x.id === cubeId ? { ...x, position: [tcp.x, tcp.y, tcp.z] as [number, number, number] } : x)),
           );
         } else if (carriedRef.current) {
-          // release: the cube settles on the ground right under the bite point
+          // release: the cube settles on the support surface right under the bite point
           setObjects((o) =>
             o.map((x) =>
-              x.id === cubeId ? { ...x, position: [tcp.x, CUBE_HALF, tcp.z] as [number, number, number] } : x,
+              x.id === cubeId
+                ? { ...x, position: [tcp.x, surfaceYRef.current + CUBE_HALF, tcp.z] as [number, number, number] }
+                : x,
             ),
           );
           grabbedRef.current = false;
@@ -401,7 +448,7 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [isPlaying, robot, keyframes, duration, jointNames, gripperJoints, loop, rotWeight]);
+  }, [isPlaying, robot, keyframes, duration, jointNames, gripperJoints, loop, rotWeight, chains.length]);
 
   const exportEpisode = useCallback(() => {
     if (!robot || keyframes.length < 2) return;
@@ -414,7 +461,7 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
       restPose: restRef.current ?? undefined,
       restGain: 0.02,
       rotWeight,
-      floorY: 0.008,
+      floorY: surfaceYRef.current + 0.008,
     });
     const frames = toLeRobotFrames(jointFrames, jointNames, 0);
     downloadJSON("grasp_episode_0.json", { jointNames: [...jointNames, "gripper"], frames });
@@ -424,18 +471,21 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
   const applyScene = useCallback(
     (scene: SceneSpec) => {
       invalidate();
+      refreshSurface();
       setObjects(
         scene.cubes.map((c) => ({
           id: `cube-${idRef.current++}`,
-          position: [c.x, CUBE_HALF, c.z] as [number, number, number],
+          position: [c.x, surfaceYRef.current + CUBE_HALF, c.z] as [number, number, number],
           color: c.color,
         })),
       );
-      setTargets(scene.targets.map((t) => ({ id: `target-${idRef.current++}`, position: [t.x, 0.026, t.z] })));
+      setTargets(
+        scene.targets.map((t) => ({ id: `target-${idRef.current++}`, position: [t.x, surfaceYRef.current + 0.026, t.z] })),
+      );
       setSelectedId(null);
       setError(null);
     },
-    [invalidate],
+    [invalidate, refreshSurface],
   );
 
   /** Anchor + radius of the robot's comfortable workspace (for scene generators). */
@@ -452,13 +502,21 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     addCube: () => {
       invalidate();
       const id = `cube-${idRef.current++}`;
+      refreshSurface();
       const [bx, bz] = spawnSpot(robot, toolRef, 0);
       setObjects((o) => {
         const n = o.length;
-        // on the ground under the gripper's hover point — inside any robot's workspace
+        // on the support surface under the gripper's hover point — inside the workspace
         return [
           ...o,
-          { id, position: [bx + (n % 3) * 0.09, CUBE_HALF, bz + Math.floor(n / 3) * 0.09] as [number, number, number] },
+          {
+            id,
+            position: [bx + (n % 3) * 0.09, surfaceYRef.current + CUBE_HALF, bz + Math.floor(n / 3) * 0.09] as [
+              number,
+              number,
+              number,
+            ],
+          },
         ];
       });
       setSelectedId(id);
@@ -466,10 +524,11 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     addTarget: () => {
       invalidate();
       const id = `target-${idRef.current++}`;
+      refreshSurface();
       setTargets((t) => {
         // same radius as the cube spawn, fanned around the base per target
         const [tx, tz] = spawnSpot(robot, toolRef, 0.55 + t.length * 0.3);
-        return [...t, { id, position: [tx, 0.026, tz] as [number, number, number] }];
+        return [...t, { id, position: [tx, surfaceYRef.current + 0.026, tz] as [number, number, number] }];
       });
       setSelectedId(id);
     },
@@ -491,6 +550,16 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     },
     applyScene,
     workspaceAnchor,
+    chains,
+    activeChainIdx,
+    setActiveChain: (idx: number) => {
+      invalidate();
+      setObjects([]);
+      setTargets([]);
+      setSelectedId(null);
+      setActiveChainIdx(idx);
+    },
+    surfaceY,
     generateGrasp,
     keyframes,
     error,

@@ -73,12 +73,16 @@ export default function Page() {
             const { scene } = await sceneFromPrompt(prompt, ed.workspaceAnchor());
             ed.applyScene(scene);
           }}
+          chains={ed.chains}
+          activeChainIdx={ed.activeChainIdx}
+          onPickChain={ed.setActiveChain}
         />
         <main className="relative">
           <RobotViewer
             robot={r.robot}
             objects={ed.objects}
             targets={ed.targets}
+            surfaceY={ed.surfaceY}
             selectedId={ed.selectedId}
             onSelect={ed.setSelectedId}
             onMoveObject={ed.moveObject}
