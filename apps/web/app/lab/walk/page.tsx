@@ -1,13 +1,14 @@
 "use client";
 
 /**
- * Physics-locomotion spike (P0): Unitree G1 standing under REAL physics in the
+ * Physics-locomotion spike (P1): Unitree G1 WALKING under real physics in the
  * browser. MuJoCo (official WASM, pthread build) runs inside a Web Worker — its
  * blocking FS/compile calls deadlock the main thread by design — and publishes
  * qpos through a SharedArrayBuffer (we are crossOriginIsolated for the pthread
- * pool anyway). Rendering drives our existing URDF model from that state.
- * Acceptance: G1 holds its 'home' keyframe under gravity in real time and
- * survives pushes. Next (P1): ONNX joystick policy → walking along planBasePath.
+ * pool anyway). The worker also runs unitree_rl_gym's pre-trained LSTM policy
+ * (hand-written forward pass, weights extracted from motion.pt) at 50 Hz against
+ * the deploy-config PD law. Rendering drives our existing URDF model from shared
+ * state; buttons/WASD set the velocity command (vx, vy, yaw rate).
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -36,6 +37,12 @@ export default function WalkLab() {
   const workerRef = useRef<Worker | null>(null);
   const [status, setStatus] = useState("启动中…");
   const [stats, setStats] = useState("");
+  const [cmd, setCmd] = useState<[number, number, number]>([0, 0, 0]);
+
+  const sendCmd = (vx: number, vy: number, wz: number) => {
+    setCmd([vx, vy, wz]);
+    workerRef.current?.postMessage({ type: "cmd", vx, vy, wz });
+  };
 
   useEffect(() => {
     let alive = true;
@@ -107,7 +114,15 @@ export default function WalkLab() {
           else if (e.data.type === "error") reject(new Error(e.data.message));
           else if (e.data.type === "progress") setStatus(`Worker: ${e.data.step}…`);
         };
-        worker!.postMessage({ type: "boot", sceneXml: sceneStripped, g1Xml, assets: [], sab, timestep: TIMESTEP });
+        worker!.postMessage({
+          type: "boot",
+          sceneXml: sceneStripped,
+          g1Xml,
+          assets: [],
+          sab,
+          timestep: TIMESTEP,
+          policyUrl: "/robots/g1/policy/g1_walk_lstm.json",
+        });
       });
       if (!alive) return;
       setStatus(""); // running
@@ -115,6 +130,7 @@ export default function WalkLab() {
       // ---- render loop: read shared state, drive the URDF model ----
       const qx90 = new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), -Math.PI / 2);
       const tmpQ = new Quaternion();
+      const follow = new Vector3();
       let frames = 0;
       let statT = performance.now();
       const tick = (now: number) => {
@@ -126,12 +142,18 @@ export default function WalkLab() {
         for (let j = 0; j < jointOrder.length; j++) {
           robot.setJointValue(jointOrder[j]!, state[8 + j]!);
         }
+        // camera follows the pelvis so the robot stays in frame while walking
+        follow.set(state[1]!, 0.7, -state[2]!);
+        if (controls) {
+          camera.position.add(follow.clone().sub(controls.target).multiplyScalar(0.08));
+          controls.target.lerp(follow, 0.08);
+        }
         controls?.update();
         renderer!.render(scene, camera);
         frames++;
         if (now - statT > 500) {
           setStats(
-            `渲染 ${Math.round((frames * 1000) / (now - statT))} fps · 物理 ${TIMESTEP * 1000}ms/步 · t=${state[0]!.toFixed(1)}s · 骨盆高 ${state[3]!.toFixed(2)}m`,
+            `渲染 ${Math.round((frames * 1000) / (now - statT))} fps · 物理 ${TIMESTEP * 1000}ms/步 · t=${state[0]!.toFixed(1)}s · 骨盆高 ${state[3]!.toFixed(2)}m · 位置 (${state[1]!.toFixed(2)}, ${state[2]!.toFixed(2)})`,
           );
           frames = 0;
           statT = now;
@@ -144,8 +166,27 @@ export default function WalkLab() {
       setStatus(`启动失败: ${e instanceof Error ? e.message : String(e)}`);
     });
 
+    // WASD / arrows steer the velocity command, space stops
+    const onKey = (e: KeyboardEvent) => {
+      const w = workerRef.current;
+      if (!w) return;
+      const send = (vx: number, vy: number, wz: number) => {
+        setCmd([vx, vy, wz]);
+        w.postMessage({ type: "cmd", vx, vy, wz });
+      };
+      switch (e.key.toLowerCase()) {
+        case "w": case "arrowup": send(0.5, 0, 0); break;
+        case "s": case "arrowdown": send(-0.3, 0, 0); break;
+        case "a": case "arrowleft": send(0.3, 0, 0.5); break;
+        case "d": case "arrowright": send(0.3, 0, -0.5); break;
+        case " ": send(0, 0, 0); e.preventDefault(); break;
+      }
+    };
+    window.addEventListener("keydown", onKey);
+
     return () => {
       alive = false;
+      window.removeEventListener("keydown", onKey);
       cancelAnimationFrame(raf);
       worker?.terminate();
       controls?.dispose();
@@ -159,13 +200,25 @@ export default function WalkLab() {
       <div ref={mountRef} className="h-full w-full" />
       <div className="absolute left-3 top-3 flex flex-col gap-2 text-xs">
         <div className="rounded border border-white/10 bg-black/60 px-3 py-2 text-zinc-200">
-          <div className="font-semibold">物理实验台 · Unitree G1(MuJoCo WASM)</div>
+          <div className="font-semibold">物理实验台 · Unitree G1 行走(MuJoCo WASM + LSTM 策略)</div>
           <div className="mt-1 text-zinc-400">
-            {status || "真实物理站立中 — P1 将接入 ONNX 行走策略"}
+            {status || `命令 vx=${cmd[0].toFixed(1)} vy=${cmd[1].toFixed(1)} ω=${cmd[2].toFixed(1)} · WASD/方向键转向,空格停`}
             {stats && <div>{stats}</div>}
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <button onClick={() => sendCmd(0.5, 0, 0)} className="rounded bg-emerald-600/80 px-3 py-1.5 text-white hover:bg-emerald-500">
+            前进
+          </button>
+          <button onClick={() => sendCmd(0, 0, 0)} className="rounded bg-zinc-600/80 px-3 py-1.5 text-white hover:bg-zinc-500">
+            停止
+          </button>
+          <button onClick={() => sendCmd(0.3, 0, 0.5)} className="rounded bg-sky-600/80 px-3 py-1.5 text-white hover:bg-sky-500">
+            左转
+          </button>
+          <button onClick={() => sendCmd(0.3, 0, -0.5)} className="rounded bg-sky-600/80 px-3 py-1.5 text-white hover:bg-sky-500">
+            右转
+          </button>
           <button
             onClick={() => workerRef.current?.postMessage({ type: "reset" })}
             className="rounded bg-cyan-600/80 px-3 py-1.5 text-white hover:bg-cyan-500"
