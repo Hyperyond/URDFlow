@@ -178,3 +178,18 @@ describe("motion clip", () => {
     expect(end.base.pos[0]).toBeCloseTo(0.9);
   });
 });
+
+describe("zip writer", () => {
+  it("round-trips through our npz parser", async () => {
+    const { buildZip: writerZip } = await import("../src/zip");
+    const npyA = buildNpy([3], new Float64Array([1.5, 2.5, 3.5]), "<f8");
+    const npyB = buildNpy([], new Float64Array([42]), "<f8");
+    const buf = writerZip([
+      { name: "qpos.npy", data: npyA },
+      { name: "fps.npy", data: npyB },
+    ]);
+    const npz = await parseNpz(buf);
+    expect(Array.from(npz["qpos"]!.data)).toEqual([1.5, 2.5, 3.5]);
+    expect(npz["fps"]!.data[0]).toBe(42);
+  });
+});

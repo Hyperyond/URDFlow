@@ -58,8 +58,11 @@ export function MenuBar({ robotLabel, presets, uploaded, onPickPreset, onPickFil
         URDFlow
       </span>
 
-      <a href="/player" className="mr-1 rounded px-2 py-1 text-zinc-300 hover:bg-white/10">
+      <a href="/player" className="rounded px-2 py-1 text-zinc-300 hover:bg-white/10">
         轨迹播放器
+      </a>
+      <a href="/dataset" className="mr-1 rounded px-2 py-1 text-zinc-300 hover:bg-white/10">
+        数据集质检
       </a>
 
       {/* Import lives here as the "easter egg" under File */}

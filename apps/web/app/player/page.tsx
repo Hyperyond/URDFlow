@@ -394,6 +394,9 @@ export default function PlayerPage() {
           >
             运行质检
           </button>
+          <a href="/dataset" className="rounded bg-white/10 px-3 py-1.5 text-zinc-200 hover:bg-white/20">
+            数据集质检
+          </a>
           <a href="/" className="rounded bg-white/10 px-3 py-1.5 text-zinc-200 hover:bg-white/20">
             返回编辑器
           </a>
