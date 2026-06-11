@@ -19,16 +19,17 @@ import { CaptureRig } from "./CaptureRig";
 export interface SceneObj {
   id: string;
   position: [number, number, number];
+  color?: string;
 }
 
 export interface RobotViewerProps {
   robot: URDFRobot | null;
   objects: SceneObj[];
-  target: [number, number, number] | null;
+  targets: { id: string; position: [number, number, number] }[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   onMoveObject: (id: string, p: [number, number, number]) => void;
-  onMoveTarget: (p: [number, number, number]) => void;
+  onMoveTarget: (id: string, p: [number, number, number]) => void;
   captureRefs?: { front: RefObject<HTMLCanvasElement | null>; top: RefObject<HTMLCanvasElement | null> };
 }
 
@@ -93,7 +94,7 @@ function DraggableBox({
 export function RobotViewer({
   robot,
   objects,
-  target,
+  targets,
   selectedId,
   onSelect,
   onMoveObject,
@@ -158,23 +159,24 @@ export function RobotViewer({
           <DraggableBox
             key={obj.id}
             position={obj.position}
-            color="#22d3ee"
+            color={obj.color ?? "#22d3ee"}
             selected={selectedId === obj.id}
             onSelect={() => onSelect(obj.id)}
             onMove={(p) => onMoveObject(obj.id, p)}
           />
         ))}
-        {target && (
+        {targets.map((t) => (
           <DraggableBox
-            position={target}
+            key={t.id}
+            position={t.position}
             color="#f59e0b"
             wireframe
             captureVisible={false}
-            selected={selectedId === "target"}
-            onSelect={() => onSelect("target")}
-            onMove={onMoveTarget}
+            selected={selectedId === t.id}
+            onSelect={() => onSelect(t.id)}
+            onMove={(p) => onMoveTarget(t.id, p)}
           />
-        )}
+        ))}
 
         {/* large ground (both layers): robot + objects sit on it; in viewport AND camera feeds */}
         <mesh ref={(m) => m?.layers.enable(1)} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>

@@ -26,6 +26,7 @@ import {
   type Keyframe,
 } from "@urdflow/urdf-web";
 import { downloadJSON } from "./download";
+import type { SceneSpec } from "./sceneTypes";
 
 const smooth = (u: number) => u * u * (3 - 2 * u);
 
@@ -34,6 +35,23 @@ export const CUBE_SIZE = 0.05;
 const CUBE_HALF = CUBE_SIZE / 2;
 /** The gripper only actually grabs when the TCP is this close to the cube center. */
 const GRASP_RADIUS = 0.06;
+
+export interface SceneObject {
+  id: string;
+  position: [number, number, number];
+  color?: string;
+}
+export interface SceneTarget {
+  id: string;
+  position: [number, number, number];
+}
+
+/** One pick-and-place pass of the program: which cube is in hand during [start, end]. */
+interface ProgramSegment {
+  cubeId: string;
+  start: number;
+  end: number;
+}
 
 /**
  * Ground spot under the gripper's current hover point, pulled slightly inward and
@@ -63,18 +81,18 @@ function spawnSpot(
   if (swing !== 0) {
     const c = Math.cos(swing);
     const s = Math.sin(swing);
-    const nx = x * c - z * s;
-    const nz = x * s + z * c;
-    return [nx, nz];
+    return [x * c - z * s, x * s + z * c];
   }
   return [x, z];
 }
 
 export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
-  const [objects, setObjects] = useState<{ id: string; position: [number, number, number] }[]>([]);
+  const [objects, setObjects] = useState<SceneObject[]>([]);
   const objectsRef = useRef(objects);
   objectsRef.current = objects;
-  const [target, setTarget] = useState<[number, number, number] | null>(null);
+  const [targets, setTargets] = useState<SceneTarget[]>([]);
+  const targetsRef = useRef(targets);
+  targetsRef.current = targets;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const idRef = useRef(0);
   const playheadRef = useRef(0);
@@ -84,7 +102,8 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
   const restRef = useRef<number[] | null>(null);
   const carriedRef = useRef(false);
   const grabbedRef = useRef(false);
-  const planCubeRef = useRef<[number, number, number] | null>(null);
+  const segmentsRef = useRef<ProgramSegment[]>([]);
+  const planSceneRef = useRef<string | null>(null);
   const [keyframes, setKeyframes] = useState<Keyframe[]>([]);
   const [playhead, setPlayhead] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -109,16 +128,17 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     playheadRef.current = 0;
     toolRef.current = null;
     calibRef.current = null;
-    planCubeRef.current = null;
+    planSceneRef.current = null;
     restRef.current = null;
     carriedRef.current = false;
     grabbedRef.current = false;
+    segmentsRef.current = [];
     setPlayhead(0);
     setIsPlaying(false);
     setError(null);
-    // objects/target are placed relative to the previous robot's workspace — clear them
+    // objects/targets are placed relative to the previous robot's workspace — clear them
     setObjects([]);
-    setTarget(null);
+    setTargets([]);
     setSelectedId(null);
     // the load-time pose is the reference posture every plan starts from (replanning
     // from playback leftovers accumulated drift — the "second run breaks" bug)
@@ -135,13 +155,28 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     setPlayhead((ph) => (ph !== 0 ? 0 : ph));
     carriedRef.current = false;
     grabbedRef.current = false;
+    segmentsRef.current = [];
   }, []);
 
+  const sceneFingerprint = useCallback(
+    () =>
+      JSON.stringify({
+        c: objectsRef.current.map((o) => o.position.map((v) => Math.round(v * 1000))),
+        t: targetsRef.current.map((o) => o.position.map((v) => Math.round(v * 1000))),
+      }),
+    [],
+  );
+
+  /**
+   * Plan the whole program: pick each cube in order and place it on target[i % n].
+   * The robot's state flows segment to segment, so each pick starts where the last
+   * place ended — one continuous, natural motion.
+   */
   const generateGrasp = useCallback(() => {
     if (!robot) return;
-    const cube = objects[0];
-    if (!cube) {
-      setError("先在左侧 Scene 添加一个正方体");
+    const cubes = objectsRef.current;
+    if (cubes.length === 0) {
+      setError("先在左侧 Scene 添加一个正方体(或从 Scene 菜单选择预设场景)");
       return;
     }
     if (gripperJoints.length === 0) {
@@ -174,54 +209,103 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     toolRef.current = tool;
     const rest = readyRef.current ?? jointNames.map((n) => robot.joints[n]!.angle as number);
     restRef.current = rest;
-    planCubeRef.current = [...cube.position] as [number, number, number];
-    const plan = planGrasp(robot, tool.link, jointNames, cube.position, {
-      candidates: 36,
-      reachThreshold: 0.05,
-      approachWeight: 2.0,
-      tcpOffset: tool.offset,
-      toolAxis: tool.axis,
-      minApproachY: 0.25, // come from above the horizon — never through the floor
-      clearance: CUBE_HALF,
-      restPose: rest,
-    });
-    if (!plan) {
-      setError("目标不可达(超出工作空间),把正方体拖近一点再试");
+
+    const tgts = targetsRef.current;
+    const segments: ProgramSegment[] = [];
+    const skipped: number[] = [];
+    let kfs: Keyframe[] = [];
+    let tOffset = 0;
+    robot.updateMatrixWorld(true);
+    const hp0 = toolWorldPosition(robot, tool.link, tool.offset);
+    const hq0 = robot.links[tool.link]?.getWorldQuaternion(new Quaternion());
+    const home0: Keyframe = {
+      t: 0,
+      position: [hp0.x, hp0.y, hp0.z],
+      quaternion: hq0 ? [hq0.x, hq0.y, hq0.z, hq0.w] : [0, 0, 0, 1],
+      gripper: 0,
+    };
+
+    for (let i = 0; i < cubes.length; i++) {
+      const cube = cubes[i]!;
+      const target = tgts.length ? tgts[i % tgts.length]!.position : null;
+      const plan = planGrasp(robot, tool.link, jointNames, cube.position, {
+        candidates: 36,
+        reachThreshold: 0.05,
+        approachWeight: 2.0,
+        tcpOffset: tool.offset,
+        toolAxis: tool.axis,
+        minApproachY: 0.25, // come from above the horizon — never through the floor
+        clearance: CUBE_HALF,
+        restPose: rest,
+      });
+      if (!plan) {
+        if (cubes.length === 1) {
+          setError("目标不可达(超出工作空间),把正方体拖近一点再试");
+          setKeyframes([]);
+          return;
+        }
+        skipped.push(i + 1);
+        continue;
+      }
+      // segment eases in from wherever the arm currently is
+      robot.updateMatrixWorld(true);
+      const hp = toolWorldPosition(robot, tool.link, tool.offset);
+      const hq = robot.links[tool.link]?.getWorldQuaternion(new Quaternion());
+      let seg = buildGraspTrajectory(plan, {
+        homePos: [hp.x, hp.y, hp.z],
+        homeQuat: hq ? [hq.x, hq.y, hq.z, hq.w] : undefined,
+      });
+      if (target) {
+        const last = seg[seg.length - 1]!;
+        const q = carryQuat(plan.graspQuat, cube.position, target);
+        const above: [number, number, number] = [target[0], Math.max(target[1], CUBE_HALF) + 0.18, target[2]];
+        // carry the cube by its center (TCP = cube center): hover it just above its rest height
+        const at: [number, number, number] = [target[0], Math.max(target[1], CUBE_HALF) + 0.005, target[2]];
+        seg = [
+          ...seg,
+          { t: last.t + 1.2, position: above, quaternion: q, gripper: 1 },
+          { t: last.t + 2.0, position: at, quaternion: q, gripper: 1 },
+          { t: last.t + 2.6, position: at, quaternion: q, gripper: 0 },
+          { t: last.t + 3.4, position: above, quaternion: q, gripper: 0 },
+        ];
+      }
+      const segShifted = seg.map((k) => ({ ...k, t: k.t + tOffset }));
+      segments.push({ cubeId: cube.id, start: tOffset, end: segShifted[segShifted.length - 1]!.t });
+      kfs = [...kfs, ...segShifted];
+      tOffset = segShifted[segShifted.length - 1]!.t + 0.4;
+      // park the robot at the segment's end pose so the next plan starts from there
+      const endKf = seg[seg.length - 1]!;
+      solveIK(robot, tool.link, jointNames, endKf.position, endKf.quaternion, {
+        iterations: 40,
+        lambda: 0.06,
+        tcpOffset: tool.offset,
+        restPose: rest,
+        restGain: 0.02,
+        rotWeight,
+        floorY: 0.008,
+      });
+    }
+
+    if (segments.length === 0) {
+      setError("所有方块都不可达(超出工作空间),把它们拖近一点再试");
       setKeyframes([]);
       return;
     }
-    setError(null);
-    // read the current TCP pose as the home start so playback eases in (no jump)
-    robot.updateMatrixWorld(true);
-    const hp = toolWorldPosition(robot, tool.link, tool.offset);
-    const hq = robot.links[tool.link]?.getWorldQuaternion(new Quaternion());
-    let kfs = buildGraspTrajectory(plan, {
-      homePos: [hp.x, hp.y, hp.z],
-      homeQuat: hq ? [hq.x, hq.y, hq.z, hq.w] : undefined,
-    });
-    // with a target placement, continue into a place: move → lower → release → retreat.
-    // the carry orientation swings with the base azimuth so wrist-roll limits never bind
-    if (target) {
-      const last = kfs[kfs.length - 1]!;
-      const q = carryQuat(plan.graspQuat, cube.position, target);
-      const above: [number, number, number] = [target[0], Math.max(target[1], CUBE_HALF) + 0.18, target[2]];
-      // carry the cube by its center (TCP = cube center): hover it just above its rest height
-      const at: [number, number, number] = [target[0], Math.max(target[1], CUBE_HALF) + 0.005, target[2]];
-      kfs = [
-        ...kfs,
-        { t: last.t + 1.2, position: above, quaternion: q, gripper: 1 },
-        { t: last.t + 2.0, position: at, quaternion: q, gripper: 1 },
-        { t: last.t + 2.6, position: at, quaternion: q, gripper: 0 },
-        { t: last.t + 3.4, position: above, quaternion: q, gripper: 0 },
-      ];
-    }
+    setError(skipped.length ? `第 ${skipped.join("、")} 个方块超出工作空间,已跳过` : null);
+
     // return to the home pose at the end (arm goes back to rest)
-    const home0 = kfs[0]!;
     kfs = [
       ...kfs,
       { t: kfs[kfs.length - 1]!.t + 1.5, position: home0.position, quaternion: home0.quaternion, gripper: 0 },
     ];
+    segmentsRef.current = segments;
+    planSceneRef.current = sceneFingerprint();
     setKeyframes(kfs);
+    // restore the ready pose so playback retargets from the same baseline
+    if (readyRef.current) {
+      jointNames.forEach((n, i) => robot.setJointValue(n, readyRef.current![i]!));
+      robot.updateMatrixWorld(true);
+    }
     // joint-space tracks for the timeline curves (retarget a low-fps sampling)
     const curveSamples = sampleTrajectory(kfs, 20, smooth);
     const jf = retargetTrajectory(robot, tool.link, jointNames, curveSamples, {
@@ -236,10 +320,15 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     const tracks = jointNames.map((n) => ({ name: n, values: jf.map((f) => f.joints[n] ?? 0) }));
     tracks.push({ name: "gripper", values: jf.map((f) => f.gripper) });
     setJointTracks(tracks);
+    // park back at ready for playback start
+    if (readyRef.current) {
+      jointNames.forEach((n, i) => robot.setJointValue(n, readyRef.current![i]!));
+      robot.updateMatrixWorld(true);
+    }
     playheadRef.current = 0;
     setPlayhead(0);
     setIsPlaying(true); // auto-play so the user sees the motion
-  }, [robot, jointNames, objects, target, gripperJoints, rotWeight]);
+  }, [robot, jointNames, gripperJoints, rotWeight, sceneFingerprint]);
 
   useEffect(() => {
     if (!isPlaying || !robot || keyframes.length < 2) return;
@@ -270,29 +359,34 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
         restPose: restRef.current ?? undefined,
         restGain: 0.02,
         rotWeight,
+        floorY: 0.008,
       });
       const calib = calibRef.current;
       if (calib) applyGripperCalibrated(robot, calib, pose.gripper, CUBE_SIZE);
       else applyGripper(robot, gripperJoints, pose.gripper * closure);
-      // kinematic attach with a grasp gate: closing only grabs the cube when the TCP
-      // is actually AT the cube — no more telekinesis when the approach missed
+      // kinematic attach with a grasp gate: closing only grabs the segment's cube when
+      // the TCP is actually AT it — no more telekinesis when the approach missed
+      const seg = segmentsRef.current.find((s) => nt >= s.start && s.end + 0.5 >= nt);
+      const cubeId = seg?.cubeId;
       const closed = pose.gripper > 0.5;
       const tcp = toolWorldPosition(robot, tool.link, tool.offset);
-      if (closed && !carriedRef.current) {
-        const c = objectsRef.current[0];
+      if (closed && !carriedRef.current && cubeId) {
+        const c = objectsRef.current.find((o) => o.id === cubeId);
         grabbedRef.current =
           !!c && Math.hypot(tcp.x - c.position[0], tcp.y - c.position[1], tcp.z - c.position[2]) <= GRASP_RADIUS;
       }
-      if (grabbedRef.current) {
+      if (grabbedRef.current && cubeId) {
         if (closed) {
           // carry: the cube rides the bite point
           setObjects((o) =>
-            o.length ? [{ ...o[0]!, position: [tcp.x, tcp.y, tcp.z] as [number, number, number] }, ...o.slice(1)] : o,
+            o.map((x) => (x.id === cubeId ? { ...x, position: [tcp.x, tcp.y, tcp.z] as [number, number, number] } : x)),
           );
         } else if (carriedRef.current) {
           // release: the cube settles on the ground right under the bite point
           setObjects((o) =>
-            o.length ? [{ ...o[0]!, position: [tcp.x, CUBE_HALF, tcp.z] as [number, number, number] }, ...o.slice(1)] : o,
+            o.map((x) =>
+              x.id === cubeId ? { ...x, position: [tcp.x, CUBE_HALF, tcp.z] as [number, number, number] } : x,
+            ),
           );
           grabbedRef.current = false;
         }
@@ -326,9 +420,33 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     downloadJSON("grasp_episode_0.json", { jointNames: [...jointNames, "gripper"], frames });
   }, [robot, jointNames, keyframes, rotWeight]);
 
+  /** Replace the whole scene (preset scenes / prompt-generated scenes). */
+  const applyScene = useCallback(
+    (scene: SceneSpec) => {
+      invalidate();
+      setObjects(
+        scene.cubes.map((c) => ({
+          id: `cube-${idRef.current++}`,
+          position: [c.x, CUBE_HALF, c.z] as [number, number, number],
+          color: c.color,
+        })),
+      );
+      setTargets(scene.targets.map((t) => ({ id: `target-${idRef.current++}`, position: [t.x, 0.026, t.z] })));
+      setSelectedId(null);
+      setError(null);
+    },
+    [invalidate],
+  );
+
+  /** Anchor + radius of the robot's comfortable workspace (for scene generators). */
+  const workspaceAnchor = useCallback((): { x: number; z: number; radius: number } => {
+    const [x, z] = spawnSpot(robot, toolRef, 0);
+    return { x, z, radius: Math.max(0.18, Math.hypot(x, z) * 1.15) };
+  }, [robot]);
+
   return {
     objects,
-    target,
+    targets,
     selectedId,
     setSelectedId,
     addCube: () => {
@@ -347,27 +465,32 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     },
     addTarget: () => {
       invalidate();
-      // same radius as the cube spawn, swung ~30° around the base
-      const [tx, tz] = spawnSpot(robot, toolRef, 0.55);
-      setTarget([tx, 0.026, tz]);
-      setSelectedId("target");
+      const id = `target-${idRef.current++}`;
+      setTargets((t) => {
+        // same radius as the cube spawn, fanned around the base per target
+        const [tx, tz] = spawnSpot(robot, toolRef, 0.55 + t.length * 0.3);
+        return [...t, { id, position: [tx, 0.026, tz] as [number, number, number] }];
+      });
+      setSelectedId(id);
     },
     removeObject: (id: string) => {
       invalidate();
       setObjects((o) => o.filter((x) => x.id !== id));
     },
-    removeTarget: () => {
+    removeTarget: (id: string) => {
       invalidate();
-      setTarget(null);
+      setTargets((t) => t.filter((x) => x.id !== id));
     },
     moveObject: (id: string, p: [number, number, number]) => {
       invalidate();
       setObjects((o) => o.map((x) => (x.id === id ? { ...x, position: p } : x)));
     },
-    moveTarget: (p: [number, number, number]) => {
+    moveTarget: (id: string, p: [number, number, number]) => {
       invalidate();
-      setTarget(p);
+      setTargets((t) => t.map((x) => (x.id === id ? { ...x, position: p } : x)));
     },
+    applyScene,
+    workspaceAnchor,
     generateGrasp,
     keyframes,
     error,
@@ -375,18 +498,9 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     duration,
     isPlaying,
     play: () => {
-      const cube = objectsRef.current[0];
-      const planned = planCubeRef.current;
-      const stale =
-        !!cube &&
-        !!planned &&
-        Math.hypot(
-          cube.position[0] - planned[0],
-          cube.position[1] - planned[1],
-          cube.position[2] - planned[2],
-        ) > 0.01;
+      const stale = planSceneRef.current !== null && planSceneRef.current !== sceneFingerprint();
       if (keyframes.length < 2 || stale) {
-        generateGrasp(); // auto-(re)plan — the program always targets where the cube IS
+        generateGrasp(); // auto-(re)plan — the program always targets where the cubes ARE
         return;
       }
       if (playheadRef.current >= duration) playheadRef.current = 0; // restart if parked at the end

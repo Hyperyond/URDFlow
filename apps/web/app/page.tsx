@@ -5,6 +5,8 @@ import { useRobotSource } from "../lib/useRobotSource";
 import { useGraspEditor } from "../lib/useGraspEditor";
 import { entriesFromFileList, entriesFromZip, entriesFromDataTransfer } from "../lib/fileInput";
 import { PRESETS } from "../lib/presets";
+import { buildScene, type SceneKind } from "../lib/scenes";
+import { sceneFromPrompt } from "../lib/promptScene";
 import { MenuBar } from "../components/MenuBar";
 import { SceneOutliner } from "../components/SceneOutliner";
 import { CameraPanel } from "../components/CameraPanel";
@@ -52,6 +54,7 @@ export default function Page() {
         presets={PRESETS}
         uploaded={uploaded}
         onPickPreset={(p) => r.loadPreset(p)}
+        onPickScene={(kind: SceneKind) => ed.applyScene(buildScene(kind, ed.workspaceAnchor()))}
         onPickFiles={handleFileList}
         onPickZip={handleZip}
       />
@@ -59,19 +62,23 @@ export default function Page() {
         <SceneOutliner
           robotLabel={r.source.label}
           objects={ed.objects}
-          target={ed.target}
+          targets={ed.targets}
           selectedId={ed.selectedId}
           onSelect={ed.setSelectedId}
           onAddCube={ed.addCube}
           onAddTarget={ed.addTarget}
           onRemoveObject={ed.removeObject}
           onRemoveTarget={ed.removeTarget}
+          onPromptScene={async (prompt) => {
+            const { scene } = await sceneFromPrompt(prompt, ed.workspaceAnchor());
+            ed.applyScene(scene);
+          }}
         />
         <main className="relative">
           <RobotViewer
             robot={r.robot}
             objects={ed.objects}
-            target={ed.target}
+            targets={ed.targets}
             selectedId={ed.selectedId}
             onSelect={ed.setSelectedId}
             onMoveObject={ed.moveObject}

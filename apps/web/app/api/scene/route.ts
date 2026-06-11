@@ -1,0 +1,92 @@
+import Anthropic from "@anthropic-ai/sdk";
+import { NextResponse } from "next/server";
+
+export const runtime = "nodejs";
+
+const SCENE_SCHEMA = {
+  type: "object",
+  properties: {
+    cubes: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          x: { type: "number", description: "米,机器人基座为原点" },
+          z: { type: "number", description: "米,机器人基座为原点" },
+          color: {
+            type: "string",
+            description: "可选,CSS 十六进制颜色,如 #f87171",
+          },
+        },
+        required: ["x", "z"],
+        additionalProperties: false,
+      },
+    },
+    targets: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          x: { type: "number" },
+          z: { type: "number" },
+        },
+        required: ["x", "z"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["cubes", "targets"],
+  additionalProperties: false,
+} as const;
+
+/**
+ * Prompt → scene layout via Claude. The viewport is a top view: the robot base sits at
+ * the origin, cubes are 5cm, and everything must land inside the reachable annulus.
+ * Without an API key the client falls back to its local parser, so this route simply
+ * reports 503.
+ */
+export async function POST(req: Request) {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return NextResponse.json({ error: "no_api_key" }, { status: 503 });
+  }
+  let body: { prompt?: string; radius?: number; anchor?: { x: number; z: number } };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "bad_json" }, { status: 400 });
+  }
+  const prompt = (body.prompt ?? "").slice(0, 500).trim();
+  if (!prompt) return NextResponse.json({ error: "empty_prompt" }, { status: 400 });
+  const radius = Math.min(Math.max(body.radius ?? 0.35, 0.18), 0.9);
+  const ax = body.anchor?.x ?? radius;
+  const az = body.anchor?.z ?? 0;
+
+  const client = new Anthropic();
+  try {
+    const response = await client.messages.create({
+      model: "claude-opus-4-8",
+      max_tokens: 1500,
+      output_config: {
+        effort: "low",
+        format: { type: "json_schema", schema: SCENE_SCHEMA },
+      },
+      system: [
+        "你是机械臂仿真场景的布局设计师。输出俯视图坐标(单位米),机器人基座在原点 (0,0)。",
+        `可达范围:到原点距离必须在 0.14 到 ${radius.toFixed(2)} 之间;舒适工作点在 (${ax.toFixed(2)}, ${az.toFixed(2)}) 附近。`,
+        "方块边长 0.05,任意两个物体(方块或目标)中心距至少 0.09。",
+        "cubes 是要抓取的方块(最多 6 个,可带颜色),targets 是放置点(最多 6 个);抓取程序按顺序把第 i 个方块放到第 i%targets.length 个目标。",
+        "按用户描述安排数量、颜色与布局(直线/网格/扇形等),让布局贴合描述的工业场景语义。",
+      ].join("\n"),
+      messages: [{ role: "user", content: prompt }],
+    });
+    const text = response.content.find((b) => b.type === "text");
+    if (!text || text.type !== "text") {
+      return NextResponse.json({ error: "no_output" }, { status: 502 });
+    }
+    const scene = JSON.parse(text.text) as { cubes: unknown; targets: unknown };
+    return NextResponse.json({ scene });
+  } catch (e) {
+    const message = e instanceof Anthropic.APIError ? `${e.status}: ${e.message}` : String(e);
+    return NextResponse.json({ error: "claude_failed", message }, { status: 502 });
+  }
+}

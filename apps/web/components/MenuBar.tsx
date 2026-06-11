@@ -3,6 +3,7 @@
 import { useRef, useState, type ReactNode } from "react";
 import { Boxes } from "lucide-react";
 import type { RobotPreset } from "../lib/presets";
+import { SCENE_PRESETS, type SceneKind } from "../lib/scenes";
 
 export interface MenuBarProps {
   robotLabel: string;
@@ -11,6 +12,7 @@ export interface MenuBarProps {
   onPickPreset: (p: RobotPreset) => void;
   onPickFiles: (list: FileList) => void;
   onPickZip: (file: File) => void;
+  onPickScene: (kind: SceneKind) => void;
 }
 
 function MenuButton({
@@ -43,7 +45,7 @@ function MenuButton({
   );
 }
 
-export function MenuBar({ robotLabel, presets, uploaded, onPickPreset, onPickFiles, onPickZip }: MenuBarProps) {
+export function MenuBar({ robotLabel, presets, uploaded, onPickPreset, onPickFiles, onPickZip, onPickScene }: MenuBarProps) {
   const [open, setOpen] = useState<string | null>(null);
   const folderRef = useRef<HTMLInputElement>(null);
   const zipRef = useRef<HTMLInputElement>(null);
@@ -97,6 +99,21 @@ export function MenuBar({ robotLabel, presets, uploaded, onPickPreset, onPickFil
           <div key={`${u.label}-${i}`} className="px-3 py-1.5 text-zinc-500">
             {u.label} · uploaded
           </div>
+        ))}
+      </MenuButton>
+
+      <MenuButton label="Scene" active={open === "scene"} onClick={() => toggle("scene")}>
+        {SCENE_PRESETS.map((s) => (
+          <button
+            key={s.kind}
+            onClick={() => {
+              onPickScene(s.kind);
+              setOpen(null);
+            }}
+            className="block w-full px-3 py-1.5 text-left text-zinc-300 hover:bg-white/10"
+          >
+            {s.name}
+          </button>
         ))}
       </MenuButton>
 

@@ -1,18 +1,19 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { Bot, Box, Video, Grid3x3, Sun, Plus, Target, X } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { Bot, Box, Video, Grid3x3, Sun, Plus, Target, X, Sparkles, Loader2 } from "lucide-react";
 
 export interface SceneOutlinerProps {
   robotLabel: string;
-  objects: { id: string; position: [number, number, number] }[];
-  target: [number, number, number] | null;
+  objects: { id: string; position: [number, number, number]; color?: string }[];
+  targets: { id: string; position: [number, number, number] }[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   onAddCube: () => void;
   onAddTarget: () => void;
   onRemoveObject: (id: string) => void;
-  onRemoveTarget: () => void;
+  onRemoveTarget: (id: string) => void;
+  onPromptScene: (prompt: string) => Promise<void>;
 }
 
 function Row({
@@ -55,14 +56,30 @@ function Row({
 export function SceneOutliner({
   robotLabel,
   objects,
-  target,
+  targets,
   selectedId,
   onSelect,
   onAddCube,
   onAddTarget,
   onRemoveObject,
   onRemoveTarget,
+  onPromptScene,
 }: SceneOutlinerProps) {
+  const [prompt, setPrompt] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    const p = prompt.trim();
+    if (!p || busy) return;
+    setBusy(true);
+    try {
+      await onPromptScene(p);
+      setPrompt("");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <aside className="flex w-56 flex-col border-r border-white/10 bg-[#14171e] text-xs">
       <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
@@ -84,6 +101,31 @@ export function SceneOutliner({
           </button>
         </div>
       </div>
+      {/* prompt-to-scene: describe the layout, Claude (or the local parser) builds it */}
+      <div className="border-b border-white/10 p-2">
+        <div className="flex items-center gap-1 rounded border border-white/10 bg-black/20 px-1.5 py-1 focus-within:border-cyan-400/40">
+          <Sparkles size={12} className="shrink-0 text-cyan-300/70" />
+          <input
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void submit();
+            }}
+            placeholder="描述场景,如:三个红方块分拣"
+            title="用提示词生成场景"
+            disabled={busy}
+            className="w-full bg-transparent text-[11px] text-zinc-200 placeholder-zinc-600 outline-none"
+          />
+          <button
+            title="生成场景"
+            onClick={() => void submit()}
+            disabled={busy || !prompt.trim()}
+            className="grid h-5 w-5 shrink-0 place-items-center rounded text-cyan-300/80 hover:bg-white/10 disabled:opacity-40"
+          >
+            {busy ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
+          </button>
+        </div>
+      </div>
       <div className="flex flex-col gap-0.5 overflow-y-auto p-2">
         <Row icon={<Bot size={14} />} label={robotLabel || "robot"} />
         {objects.map((o, i) => (
@@ -96,15 +138,16 @@ export function SceneOutliner({
             onRemove={() => onRemoveObject(o.id)}
           />
         ))}
-        {target && (
+        {targets.map((t, i) => (
           <Row
+            key={t.id}
             icon={<Target size={14} />}
-            label="Target"
-            active={selectedId === "target"}
-            onClick={() => onSelect("target")}
-            onRemove={onRemoveTarget}
+            label={`Target ${i + 1}`}
+            active={selectedId === t.id}
+            onClick={() => onSelect(t.id)}
+            onRemove={() => onRemoveTarget(t.id)}
           />
-        )}
+        ))}
         <Row icon={<Video size={14} />} label="Cameras" />
         <Row icon={<Grid3x3 size={14} />} label="Grid" />
         <Row icon={<Sun size={14} />} label="Lights" />
