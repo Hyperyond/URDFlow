@@ -75,6 +75,7 @@ export default function Page() {
           }}
           chains={ed.chains}
           activeChainIdx={ed.activeChainIdx}
+          autoHand={ed.autoHand}
           onPickChain={ed.setActiveChain}
         />
         <main className="relative">

@@ -16,6 +16,7 @@ export interface SceneOutlinerProps {
   onPromptScene: (prompt: string) => Promise<void>;
   chains: { name: string; joints: string[]; gripperJoints: string[] }[];
   activeChainIdx: number;
+  autoHand: boolean;
   onPickChain: (idx: number) => void;
 }
 
@@ -69,6 +70,7 @@ export function SceneOutliner({
   onPromptScene,
   chains,
   activeChainIdx,
+  autoHand,
   onPickChain,
 }: SceneOutlinerProps) {
   const [prompt, setPrompt] = useState("");
@@ -138,10 +140,13 @@ export function SceneOutliner({
         {chains.length > 1 && (
           <select
             title="选择活动运动链"
-            value={activeChainIdx}
+            value={autoHand ? -1 : activeChainIdx}
             onChange={(e) => onPickChain(Number(e.target.value))}
             className="mx-1 mb-1 rounded border border-white/10 bg-black/30 px-1.5 py-1 text-[11px] text-zinc-200 outline-none focus:border-cyan-400/40"
           >
+            {chains.filter((c) => c.gripperJoints.length).length > 1 && (
+              <option value={-1}>自动选择最优手</option>
+            )}
             {chains.map((c, i) => (
               <option key={i} value={i}>
                 {c.name} · {c.joints.length} 关节{c.gripperJoints.length ? " · 带夹爪" : ""}

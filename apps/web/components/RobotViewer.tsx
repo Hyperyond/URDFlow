@@ -104,22 +104,22 @@ export function RobotViewer({
   onMoveTarget,
   captureRefs,
 }: RobotViewerProps) {
-  const [robotY, setRobotY] = useState(0);
-
   useEffect(() => {
     robot?.traverse((o) => o.layers.enable(1));
   }, [robot]);
 
-  // sit the robot on the ground: lift so its lowest point rests on y=0 (no floor clipping)
+  // sit the robot on the ground: lift so its lowest point rests on y=0 (no floor
+  // clipping). Applied imperatively — the editor owns x/z/yaw (walk-approach), the
+  // viewer owns only the vertical lift, so no prop fights with base motion.
   useEffect(() => {
-    if (!robot) {
-      setRobotY(0);
-      return;
-    }
+    if (!robot) return;
     const fit = () => {
       robot.updateMatrixWorld(true);
       const b = new Box3().setFromObject(robot);
-      if (Number.isFinite(b.min.y)) setRobotY(-Math.min(0, b.min.y));
+      if (Number.isFinite(b.min.y)) {
+        robot.position.y -= b.min.y; // idempotent: world min lands exactly on y=0
+        robot.updateMatrixWorld(true);
+      }
     };
     fit();
     const t = setTimeout(fit, 200); // re-fit after async meshes finish loading
@@ -147,7 +147,7 @@ export function RobotViewer({
         <directionalLight position={[5, 8, 4]} intensity={1.1} color="#fff6ea" />
         <directionalLight position={[-5, 3, -4]} intensity={0.35} color="#9db4ff" />
 
-        {robot && <primitive object={robot} position={[0, robotY, 0]} />}
+        {robot && <primitive object={robot} />}
         {captureRefs && (
           <CaptureRig
             robot={robot}
