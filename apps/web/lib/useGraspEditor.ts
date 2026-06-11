@@ -409,9 +409,12 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
         approachWeight: 2.0,
         tcpOffset: tool.offset,
         toolAxis: tool.axis,
-        minApproachY: 0.25, // come from above the horizon — never through the support surface
+        // high-DOF chains can afford steep top-down approaches (slanted ones let a
+        // finger sweep through the cube); under-actuated arms keep the slack
+        minApproachY: names.length >= 7 ? 0.6 : 0.25,
         clearance: surfaceYRef.current + CUBE_HALF,
         restPose: rest,
+        openAxis: calib?.openAxis,
       });
 
     for (let i = 0; i < cubes.length; i++) {

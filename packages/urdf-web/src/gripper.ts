@@ -1,4 +1,4 @@
-import { Vector3, type Object3D } from "three";
+import { Quaternion, Vector3, type Object3D } from "three";
 import type { URDFRobot } from "urdf-loader";
 
 export interface GripperJoint {
@@ -83,6 +83,8 @@ export interface GripperCalibration {
   valuesAt: (u: number) => Record<string, number>;
   /** Bite point (gap midpoint at first pad contact) in the palm link's local frame. */
   tcp: [number, number, number];
+  /** Direction the gripping pads separate along (palm-local, measured fully open). */
+  openAxis: [number, number, number];
   /** Palm link name the tcp is expressed in. */
   palmLink: string;
 }
@@ -320,6 +322,18 @@ export function calibrateGripper(
     return null;
   }
 
+  // pad separation direction at the open pose, expressed in the palm frame — the
+  // planner uses it to keep the finger plane horizontal so a finger never stabs
+  // down through the object
+  setU(0);
+  robot.updateMatrixWorld(true);
+  const openA = centroid(pick(ptsA(), padIdxA));
+  const openB = centroid(pick(ptsB(), padIdxB));
+  const sepWorld = openA.clone().sub(openB);
+  const palmQInv = palm.getWorldQuaternion(new Quaternion()).invert();
+  const openLocal =
+    sepWorld.lengthSq() > 1e-10 ? sepWorld.applyQuaternion(palmQInv).normalize() : new Vector3(0, 1, 0);
+
   // bite point: midpoint of the pad pair at first pad contact (else the closed end)
   let uBite = 1;
   for (let i = 0; i < gaps.length; i++) {
@@ -356,6 +370,7 @@ export function calibrateGripper(
     uForGap,
     valuesAt,
     tcp: [tcpLocal.x, tcpLocal.y, tcpLocal.z],
+    openAxis: [openLocal.x, openLocal.y, openLocal.z],
     palmLink: palmName,
   };
 }

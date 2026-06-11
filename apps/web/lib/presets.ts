@@ -65,13 +65,14 @@ export const PRESETS: RobotPreset[] = [
     id: "g1",
     name: "Unitree G1 (人形+夹爪)",
     url: "/robots/g1/g1.urdf",
-    // stand straight, raise the left arm to a table-work pose; legs/right arm stay at 0
+    // both arms in a table-work pose — auto hand selection may pick either one
     readyPose: {
       left_shoulder_pitch_joint: -0.4,
       left_shoulder_roll_joint: 0.25,
       left_elbow_joint: 0.9,
-      right_shoulder_pitch_joint: 0.1,
-      right_elbow_joint: 0.4,
+      right_shoulder_pitch_joint: -0.4,
+      right_shoulder_roll_joint: -0.25,
+      right_elbow_joint: 0.9,
     },
   },
   {

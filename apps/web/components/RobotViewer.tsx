@@ -181,20 +181,37 @@ export function RobotViewer({
           />
         ))}
 
-        {/* work table for tall robots (humanoids): centered under the scene objects */}
-        {surfaceY > 0 && (
-          <mesh
-            ref={(m) => m?.layers.enable(1)}
-            position={[
-              objects[0]?.position[0] ?? targets[0]?.position[0] ?? 0.35,
-              surfaceY - 0.015,
-              objects[0]?.position[2] ?? targets[0]?.position[2] ?? 0,
-            ]}
-          >
-            <boxGeometry args={[1.0, 0.03, 0.8]} />
-            <meshStandardMaterial color="#b9bec7" roughness={0.7} />
-          </mesh>
-        )}
+        {/* work table for tall robots (humanoids): hugs the scene content and stays
+            clear of wherever the robot is standing — no slab through its legs */}
+        {surfaceY > 0 &&
+          (() => {
+            const pts = [...objects, ...targets]
+              .map((o) => o.position)
+              .filter((p) => p[1] < surfaceY + 0.12); // ignore a cube mid-carry
+            if (pts.length === 0) return null;
+            let minX = Math.min(...pts.map((p) => p[0])) - 0.14;
+            let maxX = Math.max(...pts.map((p) => p[0])) + 0.14;
+            let minZ = Math.min(...pts.map((p) => p[2])) - 0.14;
+            let maxZ = Math.max(...pts.map((p) => p[2])) + 0.14;
+            const bx = robot?.position.x ?? 0;
+            const bz = robot?.position.z ?? 0;
+            const CLEAR = 0.24; // keep this much room around the robot's stance
+            if (bx <= minX) minX = Math.max(minX, bx + CLEAR);
+            else if (bx >= maxX) maxX = Math.min(maxX, bx - CLEAR);
+            if (bz <= minZ) minZ = Math.max(minZ, bz + CLEAR);
+            else if (bz >= maxZ) maxZ = Math.min(maxZ, bz - CLEAR);
+            const w = Math.max(0.3, maxX - minX);
+            const d = Math.max(0.3, maxZ - minZ);
+            return (
+              <mesh
+                ref={(m) => m?.layers.enable(1)}
+                position={[(minX + maxX) / 2, surfaceY - 0.015, (minZ + maxZ) / 2]}
+              >
+                <boxGeometry args={[w, 0.03, d]} />
+                <meshStandardMaterial color="#b9bec7" roughness={0.7} />
+              </mesh>
+            );
+          })()}
 
         {/* large ground (both layers): robot + objects sit on it; in viewport AND camera feeds */}
         <mesh ref={(m) => m?.layers.enable(1)} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>

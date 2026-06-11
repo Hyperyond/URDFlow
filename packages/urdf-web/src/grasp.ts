@@ -29,6 +29,8 @@ export interface PlanGraspOptions {
   rotWeight?: number;
   /** Lift waypoint height validated per candidate, so the whole pick stays trackable. */
   liftCheckHeight?: number;
+  /** Finger-separation direction (eeLink-local). Grasps keeping it horizontal score better. */
+  openAxis?: [number, number, number];
 }
 
 /** Roughly uniform points on a unit sphere (Fibonacci spiral). */
@@ -105,6 +107,15 @@ export function planGrasp(
         .clone()
         .applyQuaternion(robot.links[eeLink]!.getWorldQuaternion(new Quaternion()));
       const align = achievedAxis.angleTo(dir.clone().negate());
+      // keep the finger plane horizontal: if the pads separate vertically, a finger
+      // stabs down through the object instead of straddling it
+      let openCost = 0;
+      if (opts.openAxis) {
+        const w = new Vector3(...opts.openAxis).applyQuaternion(
+          robot.links[eeLink]!.getWorldQuaternion(new Quaternion()),
+        );
+        openCost = Math.abs(w.y) * 2.0;
+      }
       // configurations that park a joint on its limit have no margin left to track
       // the carry — penalize them so a roomier twist/direction wins
       const limitCost = jointNames.reduce((s, n) => {
@@ -120,7 +131,7 @@ export function planGrasp(
         const margin = Math.min(j.angle - lo, up - j.angle) / (up - lo); // 0 at a limit
         return s + Math.max(0, 0.15 - margin) * 8;
       }, 0);
-      const cost = jointCost + topDown + align * 1.5 + limitCost;
+      const cost = jointCost + topDown + align * 1.5 + limitCost + openCost;
       if (cost >= bestCost) continue;
       // the lift waypoint must track too, or playback stalls against a joint limit
       if (liftH > 0) {

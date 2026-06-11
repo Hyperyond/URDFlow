@@ -71,3 +71,24 @@ describe("calibrateGripper (real meshes)", () => {
     expect(calibrateGripper(robot, joints)).toBeNull();
   });
 });
+
+describe("openAxis (finger separation direction)", () => {
+  it.each([
+    ["piper/piper.urdf"],
+    ["so101_gripper/so101_gripper.urdf"],
+    ["g1/g1.urdf"],
+  ])("%s: pads separate roughly perpendicular to the approach axis", (rel) => {
+    const robot = loadWithMeshes(rel);
+    const joints = findGripperJoints(robot);
+    // humanoids carry two hands — calibrate one hand's pair only
+    const side = joints.filter((j) => j.name.startsWith("left_"));
+    const calib = calibrateGripper(robot, side.length >= 2 ? side : joints)!;
+    expect(calib).not.toBeNull();
+    const open = calib.openAxis;
+    expect(Math.hypot(...open)).toBeCloseTo(1, 3);
+    const tcpLen = Math.hypot(...calib.tcp);
+    const approach = calib.tcp.map((v) => v / tcpLen);
+    const dot = Math.abs(open[0] * approach[0]! + open[1] * approach[1]! + open[2] * approach[2]!);
+    expect(dot).toBeLessThan(0.45); // separation ⊥-ish to approach — fingers straddle, not stab
+  });
+});
