@@ -2,6 +2,7 @@ import { Group, Mesh, MeshStandardMaterial, type LoadingManager, type Object3D }
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { ColladaLoader } from "three/examples/jsm/loaders/ColladaLoader.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { resolveMeshRef, type FileMap } from "./fileMap";
 
 const DEFAULT_MAT = new MeshStandardMaterial({ color: 0xb0b4bb, metalness: 0.35, roughness: 0.55 });
@@ -30,6 +31,12 @@ export function createFileMeshLoader(fm: FileMap) {
       } else if (/\.dae$/i.test(entry.path)) {
         const collada = new ColladaLoader().parse(decoder.decode(entry.data), "");
         done(collada ? collada.scene : new Group());
+      } else if (/\.obj$/i.test(entry.path)) {
+        const group = new OBJLoader().parse(decoder.decode(entry.data));
+        group.traverse((o) => {
+          if (o instanceof Mesh) o.material = DEFAULT_MAT;
+        });
+        done(group);
       } else if (/\.(gltf|glb)$/i.test(entry.path)) {
         new GLTFLoader().parse(
           entry.data,

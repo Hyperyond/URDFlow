@@ -24,3 +24,7 @@ export { planGrasp, buildGraspTrajectory, carryQuat } from "./grasp";
 export type { GraspPlan, PlanGraspOptions, GraspTrajectoryOptions } from "./grasp";
 export { findGripperJoints, applyGripper, closureForWidth, calibrateGripper, applyGripperCalibrated } from "./gripper";
 export type { GripperJoint, GripperCalibration } from "./gripper";
+export { parseNpy, parseNpz } from "./npz";
+export type { NpyArray } from "./npz";
+export { motionFromNpz, fitJointCount, frameAt, sampleAt } from "./motion";
+export type { MotionClip, MotionFrame, ZUpPose } from "./motion";
