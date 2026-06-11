@@ -18,5 +18,5 @@ export { retargetTrajectory, toLeRobotFrames } from "./retarget";
 export type { JointFrame, LeRobotFrame } from "./retarget";
 export { planGrasp, buildGraspTrajectory, carryQuat } from "./grasp";
 export type { GraspPlan, PlanGraspOptions, GraspTrajectoryOptions } from "./grasp";
-export { findGripperJoints, applyGripper, closureForWidth } from "./gripper";
-export type { GripperJoint } from "./gripper";
+export { findGripperJoints, applyGripper, closureForWidth, calibrateGripper, applyGripperCalibrated } from "./gripper";
+export type { GripperJoint, GripperCalibration } from "./gripper";

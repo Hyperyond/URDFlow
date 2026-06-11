@@ -4,7 +4,8 @@ import { resolve } from "node:path";
 import { Object3D, Vector3, Quaternion } from "three";
 import { loadURDFFromString } from "../src/loadURDF";
 import { findToolFrame } from "../src/tool";
-import { findGripperJoints } from "../src/gripper";
+import { findGripperJoints, calibrateGripper } from "../src/gripper";
+import { stlMeshLoaderFor } from "./helpers/stlMeshes";
 import { naturalRestPose, solveIK, toolWorldPosition } from "../src/ik";
 import { planGrasp, buildGraspTrajectory, carryQuat } from "../src/grasp";
 import { sampleTrajectory, interpolateKeyframes, type Keyframe } from "../src/trajectory";
@@ -14,9 +15,10 @@ const ROBOTS = resolve(__dirname, "../../../apps/web/public/robots");
 // skip mesh loading — kinematics come from the URDF alone
 const noMesh = (_p: string, _m: unknown, done: (o: Object3D) => void) => done(new Object3D());
 
-function loadReal(rel: string): URDFRobot {
+function loadReal(rel: string, withMeshes = false): URDFRobot {
   const xml = readFileSync(resolve(ROBOTS, rel), "utf-8");
-  return loadURDFFromString(xml, { loadMeshCb: noMesh });
+  const dir = resolve(ROBOTS, rel, "..");
+  return loadURDFFromString(xml, { loadMeshCb: withMeshes ? stlMeshLoaderFor(dir) : noMesh });
 }
 
 interface PipelineResult {
@@ -24,6 +26,8 @@ interface PipelineResult {
   minTCPy: number;
   maxTrackErr: number;
   releasedAt: [number, number, number];
+  /** TCP-to-cube distance at the moment the gripper closes (the app's grasp gate). */
+  graspDist: number;
 }
 
 /** Replays the app's whole pick-and-place pipeline headlessly and collects safety metrics. */
@@ -46,7 +50,20 @@ function runPickPlace(
   jointNames.forEach((n, i) => robot.setJointValue(n, ready?.[n] ?? fallback[i]!));
   robot.updateMatrixWorld(true);
 
-  const tool = findToolFrame(robot);
+  // calibrated bite point when meshes are available (same priority as the app)
+  const calib = calibrateGripper(robot, grippers);
+  let tool = findToolFrame(robot);
+  if (calib) {
+    const len = Math.hypot(...calib.tcp);
+    tool = {
+      link: calib.palmLink,
+      offset: calib.tcp,
+      axis:
+        len > 1e-3
+          ? ([calib.tcp[0] / len, calib.tcp[1] / len, calib.tcp[2] / len] as [number, number, number])
+          : tool.axis,
+    };
+  }
   const rest = jointNames.map((n) => robot.joints[n]!.angle as number);
   const plan = planGrasp(robot, tool.link, jointNames, cube, {
     candidates: 36,
@@ -84,6 +101,7 @@ function runPickPlace(
   let minTCPy = Infinity;
   let maxTrackErr = 0;
   let released: [number, number, number] | null = null;
+  let graspDist = Infinity;
   let prevClosed = false;
   for (const s of samples) {
     solveIK(robot, tool.link, jointNames, s.position, s.quaternion, {
@@ -98,6 +116,12 @@ function runPickPlace(
     const p = toolWorldPosition(robot, tool.link, tool.offset);
     minTCPy = Math.min(minTCPy, p.y);
     const closed = s.gripper > 0.5;
+    if (closed && !prevClosed) {
+      graspDist = Math.min(
+        graspDist,
+        Math.hypot(p.x - cube[0], p.y - cube[1], p.z - cube[2]),
+      );
+    }
     if (prevClosed && !closed) released = [p.x, 0.025, p.z];
     prevClosed = closed;
     // track only segments that should be on-path (skip the big home transits where
@@ -109,7 +133,7 @@ function runPickPlace(
     }
   }
   if (!released) throw new Error("gripper never released");
-  return { kfs, minTCPy, maxTrackErr, releasedAt: released };
+  return { kfs, minTCPy, maxTrackErr, releasedAt: released, graspDist };
 }
 
 describe("pick-and-place integration (real URDFs)", () => {
@@ -173,5 +197,58 @@ describe("PiPER (downloaded preset)", () => {
     expect(res!.minTCPy).toBeGreaterThan(0.0);
     expect(res!.maxTrackErr).toBeLessThan(0.02);
     expect(Math.hypot(res!.releasedAt[0] - 0.26, res!.releasedAt[2] - 0.2)).toBeLessThan(0.02);
+  });
+});
+
+describe("calibrated grippers (real meshes)", () => {
+  it("SO-101 grasps within the gate radius and places at the target", () => {
+    const robot = loadReal("so101_gripper/so101_gripper.urdf", true);
+    const res = runPickPlace(robot, [0.06, 0.025, 0.26], [-0.1, 0.026, 0.22]);
+    expect(res).not.toBeNull();
+    expect(res!.graspDist).toBeLessThan(0.06); // the grasp gate would actually grab
+    expect(res!.minTCPy).toBeGreaterThan(0.0);
+    expect(Math.hypot(res!.releasedAt[0] + 0.1, res!.releasedAt[2] - 0.22)).toBeLessThan(0.03);
+  });
+
+  it("PiPER grasps within the gate radius and places at the target", () => {
+    const robot = loadReal("piper/piper.urdf", true);
+    const ready = { joint1: 0, joint2: 1.0, joint3: -0.9, joint4: 0, joint5: 0.7, joint6: 0 };
+    const res = runPickPlace(robot, [0.32, 0.025, 0.06], [0.26, 0.026, 0.2], ready);
+    expect(res).not.toBeNull();
+    expect(res!.graspDist).toBeLessThan(0.06);
+    expect(res!.minTCPy).toBeGreaterThan(0.0);
+    expect(Math.hypot(res!.releasedAt[0] - 0.26, res!.releasedAt[2] - 0.2)).toBeLessThan(0.025);
+  });
+
+  it("SO-100 single-jaw grasps within the gate radius", () => {
+    const robot = loadReal("so100/so100.urdf", true);
+    const ready = { shoulder_pan: 0, shoulder_lift: 0.6, elbow_flex: -1.1, wrist_flex: -0.5 };
+    const res = runPickPlace(robot, [0.0, 0.025, 0.24], [0.12, 0.026, 0.2], ready);
+    expect(res).not.toBeNull();
+    expect(res!.graspDist).toBeLessThan(0.06);
+    expect(Math.hypot(res!.releasedAt[0] - 0.12, res!.releasedAt[2] - 0.2)).toBeLessThan(0.04);
+  });
+});
+
+describe("replanning regression (the second-run bug)", () => {
+  it("Panda: a second plan after moving cube and target still lands on target", () => {
+    const robot = loadReal("panda/panda.urdf");
+    const ready = {
+      panda_joint1: 0,
+      panda_joint2: -0.785,
+      panda_joint3: 0,
+      panda_joint4: -2.356,
+      panda_joint5: 0,
+      panda_joint6: 1.571,
+      panda_joint7: 0.785,
+    };
+    const r1 = runPickPlace(robot, [0.42, 0.025, -0.08], [0.5, 0.026, 0.16], ready);
+    expect(r1).not.toBeNull();
+    // user drags the cube & target somewhere else and replans on the SAME robot
+    const r2 = runPickPlace(robot, [0.36, 0.025, 0.18], [0.45, 0.026, -0.05], ready);
+    expect(r2).not.toBeNull();
+    expect(r2!.graspDist).toBeLessThan(0.06);
+    expect(Math.hypot(r2!.releasedAt[0] - 0.45, r2!.releasedAt[2] + 0.05)).toBeLessThan(0.02);
+    expect(r2!.minTCPy).toBeGreaterThan(0.0);
   });
 });

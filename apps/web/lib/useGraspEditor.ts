@@ -16,6 +16,9 @@ import {
   findGripperJoints,
   applyGripper,
   closureForWidth,
+  calibrateGripper,
+  applyGripperCalibrated,
+  type GripperCalibration,
   type ToolFrame,
   type GripperJoint,
   type JointInfo,
@@ -29,6 +32,8 @@ const smooth = (u: number) => u * u * (3 - 2 * u);
 /** Side length of the scene cubes (must match RobotViewer's boxGeometry). */
 export const CUBE_SIZE = 0.05;
 const CUBE_HALF = CUBE_SIZE / 2;
+/** The gripper only actually grabs when the TCP is this close to the cube center. */
+const GRASP_RADIUS = 0.06;
 
 /**
  * Ground spot under the gripper's current hover point, pulled slightly inward and
@@ -67,13 +72,19 @@ function spawnSpot(
 
 export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
   const [objects, setObjects] = useState<{ id: string; position: [number, number, number] }[]>([]);
+  const objectsRef = useRef(objects);
+  objectsRef.current = objects;
   const [target, setTarget] = useState<[number, number, number] | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const idRef = useRef(0);
   const playheadRef = useRef(0);
   const toolRef = useRef<ToolFrame | null>(null);
+  const calibRef = useRef<GripperCalibration | null>(null);
+  const readyRef = useRef<number[] | null>(null);
   const restRef = useRef<number[] | null>(null);
   const carriedRef = useRef(false);
+  const grabbedRef = useRef(false);
+  const planCubeRef = useRef<[number, number, number] | null>(null);
   const [keyframes, setKeyframes] = useState<Keyframe[]>([]);
   const [playhead, setPlayhead] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -97,8 +108,11 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     setJointTracks([]);
     playheadRef.current = 0;
     toolRef.current = null;
+    calibRef.current = null;
+    planCubeRef.current = null;
     restRef.current = null;
     carriedRef.current = false;
+    grabbedRef.current = false;
     setPlayhead(0);
     setIsPlaying(false);
     setError(null);
@@ -106,7 +120,22 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     setObjects([]);
     setTarget(null);
     setSelectedId(null);
-  }, [robot]);
+    // the load-time pose is the reference posture every plan starts from (replanning
+    // from playback leftovers accumulated drift — the "second run breaks" bug)
+    readyRef.current = robot ? jointNames.map((n) => robot.joints[n]!.angle as number) : null;
+  }, [robot, jointNames]);
+
+  // any scene edit invalidates the planned program — playing a trajectory that was
+  // planned for the OLD cube/target positions is exactly the "second run breaks" bug
+  const invalidate = useCallback(() => {
+    setKeyframes((k) => (k.length ? [] : k));
+    setJointTracks((t) => (t.length ? [] : t));
+    setIsPlaying((pl) => (pl ? false : pl));
+    playheadRef.current = 0;
+    setPlayhead((ph) => (ph !== 0 ? 0 : ph));
+    carriedRef.current = false;
+    grabbedRef.current = false;
+  }, []);
 
   const generateGrasp = useCallback(() => {
     if (!robot) return;
@@ -119,12 +148,33 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
       setError("当前机型没有夹爪关节,抓取需要带夹爪的机型(如 Franka Panda / SO-101)");
       return;
     }
-    // tool frame is computed lazily here (meshes have finished streaming by now)
-    const tool = findToolFrame(robot);
+    // every plan starts from the same ready baseline — replanning from playback
+    // leftovers drifted a little more on each run until the motion broke
+    if (readyRef.current) {
+      jointNames.forEach((n, i) => robot.setJointValue(n, readyRef.current![i]!));
+      robot.updateMatrixWorld(true);
+    }
+    // tool frame + gripper calibration are computed lazily here (meshes have finished
+    // streaming by now); the calibrated bite point beats any name-based guess
+    const calib = calibRef.current ?? calibrateGripper(robot, gripperJoints);
+    calibRef.current = calib;
+    let tool = findToolFrame(robot);
+    if (calib) {
+      const len = Math.hypot(...calib.tcp);
+      tool = {
+        link: calib.palmLink,
+        offset: calib.tcp,
+        axis:
+          len > 1e-3
+            ? ([calib.tcp[0] / len, calib.tcp[1] / len, calib.tcp[2] / len] as [number, number, number])
+            : tool.axis,
+      };
+      applyGripperCalibrated(robot, calib, 0, CUBE_SIZE); // start truly open (PiPER's axes lie)
+    }
     toolRef.current = tool;
-    // the loaded ready pose doubles as the rest/natural posture for every IK solve
-    const rest = jointNames.map((n) => robot.joints[n]!.angle as number);
+    const rest = readyRef.current ?? jointNames.map((n) => robot.joints[n]!.angle as number);
     restRef.current = rest;
+    planCubeRef.current = [...cube.position] as [number, number, number];
     const plan = planGrasp(robot, tool.link, jointNames, cube.position, {
       candidates: 36,
       reachThreshold: 0.05,
@@ -221,14 +271,31 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
         restGain: 0.02,
         rotWeight,
       });
-      applyGripper(robot, gripperJoints, pose.gripper * closure);
-      // kinematic attach: the grasped cube rides the TCP while the gripper is closed,
-      // then settles onto the ground right where it was released
+      const calib = calibRef.current;
+      if (calib) applyGripperCalibrated(robot, calib, pose.gripper, CUBE_SIZE);
+      else applyGripper(robot, gripperJoints, pose.gripper * closure);
+      // kinematic attach with a grasp gate: closing only grabs the cube when the TCP
+      // is actually AT the cube — no more telekinesis when the approach missed
       const closed = pose.gripper > 0.5;
-      if (closed || carriedRef.current) {
-        const p = toolWorldPosition(robot, tool.link, tool.offset);
-        const dropped: [number, number, number] = closed ? [p.x, p.y, p.z] : [p.x, CUBE_HALF, p.z];
-        setObjects((o) => (o.length ? [{ ...o[0]!, position: dropped }, ...o.slice(1)] : o));
+      const tcp = toolWorldPosition(robot, tool.link, tool.offset);
+      if (closed && !carriedRef.current) {
+        const c = objectsRef.current[0];
+        grabbedRef.current =
+          !!c && Math.hypot(tcp.x - c.position[0], tcp.y - c.position[1], tcp.z - c.position[2]) <= GRASP_RADIUS;
+      }
+      if (grabbedRef.current) {
+        if (closed) {
+          // carry: the cube rides the bite point
+          setObjects((o) =>
+            o.length ? [{ ...o[0]!, position: [tcp.x, tcp.y, tcp.z] as [number, number, number] }, ...o.slice(1)] : o,
+          );
+        } else if (carriedRef.current) {
+          // release: the cube settles on the ground right under the bite point
+          setObjects((o) =>
+            o.length ? [{ ...o[0]!, position: [tcp.x, CUBE_HALF, tcp.z] as [number, number, number] }, ...o.slice(1)] : o,
+          );
+          grabbedRef.current = false;
+        }
       }
       carriedRef.current = closed;
       setPlayhead(nt);
@@ -265,6 +332,7 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     selectedId,
     setSelectedId,
     addCube: () => {
+      invalidate();
       const id = `cube-${idRef.current++}`;
       const [bx, bz] = spawnSpot(robot, toolRef, 0);
       setObjects((o) => {
@@ -278,16 +346,28 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
       setSelectedId(id);
     },
     addTarget: () => {
+      invalidate();
       // same radius as the cube spawn, swung ~30° around the base
       const [tx, tz] = spawnSpot(robot, toolRef, 0.55);
       setTarget([tx, 0.026, tz]);
       setSelectedId("target");
     },
-    removeObject: (id: string) => setObjects((o) => o.filter((x) => x.id !== id)),
-    removeTarget: () => setTarget(null),
-    moveObject: (id: string, p: [number, number, number]) =>
-      setObjects((o) => o.map((x) => (x.id === id ? { ...x, position: p } : x))),
-    moveTarget: (p: [number, number, number]) => setTarget(p),
+    removeObject: (id: string) => {
+      invalidate();
+      setObjects((o) => o.filter((x) => x.id !== id));
+    },
+    removeTarget: () => {
+      invalidate();
+      setTarget(null);
+    },
+    moveObject: (id: string, p: [number, number, number]) => {
+      invalidate();
+      setObjects((o) => o.map((x) => (x.id === id ? { ...x, position: p } : x)));
+    },
+    moveTarget: (p: [number, number, number]) => {
+      invalidate();
+      setTarget(p);
+    },
     generateGrasp,
     keyframes,
     error,
@@ -295,8 +375,18 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     duration,
     isPlaying,
     play: () => {
-      if (keyframes.length < 2) {
-        generateGrasp(); // auto-plan + auto-play — no manual generate step
+      const cube = objectsRef.current[0];
+      const planned = planCubeRef.current;
+      const stale =
+        !!cube &&
+        !!planned &&
+        Math.hypot(
+          cube.position[0] - planned[0],
+          cube.position[1] - planned[1],
+          cube.position[2] - planned[2],
+        ) > 0.01;
+      if (keyframes.length < 2 || stale) {
+        generateGrasp(); // auto-(re)plan — the program always targets where the cube IS
         return;
       }
       if (playheadRef.current >= duration) playheadRef.current = 0; // restart if parked at the end
