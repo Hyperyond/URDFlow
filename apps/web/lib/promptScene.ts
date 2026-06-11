@@ -75,10 +75,16 @@ export function localSceneFromPrompt(
   }
   const wantsTargets = !/不要目标|无目标|只要方块/.test(prompt);
   const tCount = numNear(prompt, /目标|放置|托盘|target/i) ?? (/同一个/.test(prompt) ? 1 : n);
+  // "目标放远": push the drop-offs to the far edge of the (walkable) workspace
+  const far = /远|far/i.test(prompt);
+  const tScale = far ? radius / (len || 1) : 1;
   const targets: SceneSpec["targets"] = [];
   for (let i = 0; i < (wantsTargets ? tCount : 0); i++) {
     const a = 0.7 + (i / Math.max(1, tCount - 1) || 0) * 0.5;
-    targets.push({ x: x * Math.cos(a) - z * Math.sin(a), z: x * Math.sin(a) + z * Math.cos(a) });
+    targets.push({
+      x: (x * Math.cos(a) - z * Math.sin(a)) * tScale,
+      z: (x * Math.sin(a) + z * Math.cos(a)) * tScale,
+    });
   }
   return clampScene({ cubes, targets }, radius);
 }

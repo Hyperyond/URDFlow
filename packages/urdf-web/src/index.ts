@@ -12,8 +12,8 @@ export { findEndEffectorLink, numericJacobian, solveIK, naturalRestPose, toolWor
 export type { SolveIKOptions } from "./ik";
 export { findToolFrame } from "./tool";
 export { findKinematicChains, chainGrippers } from "./chains";
-export { isMobileBase, applyBasePose, computeApproachBase } from "./base";
-export type { BasePose } from "./base";
+export { isMobileBase, applyBasePose, computeApproachBase, planBasePath } from "./base";
+export type { BasePose, RectObstacle } from "./base";
 export type { KinematicChain } from "./chains";
 export type { ToolFrame } from "./tool";
 export { interpolateKeyframes, sampleTrajectory } from "./trajectory";

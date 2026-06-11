@@ -111,3 +111,38 @@ describe("walk-then-grasp (G1, real meshes)", () => {
     expect(plan).not.toBeNull();
   });
 });
+
+describe("planBasePath (obstacle-aware base glide)", () => {
+  const table = { minX: -0.5, maxX: 0.5, minZ: -0.4, maxZ: 0.4 };
+
+  it("goes straight when nothing is in the way", async () => {
+    const { planBasePath } = await import("../src/base");
+    const path = planBasePath([-1, 1], [1, 1], [table], 0.25);
+    expect(path).toEqual([[1, 1]]);
+  });
+
+  it("detours around a table that blocks the straight line", async () => {
+    const { planBasePath } = await import("../src/base");
+    const path = planBasePath([-1.2, 0], [1.2, 0], [table], 0.25);
+    expect(path.length).toBeGreaterThanOrEqual(2); // waypoint(s) + destination
+    expect(path[path.length - 1]).toEqual([1.2, 0]);
+    // every leg keeps clear of the inflated footprint
+    const inflated = { minX: -0.75, maxX: 0.75, minZ: -0.65, maxZ: 0.65 };
+    const pts = [[-1.2, 0], ...path] as [number, number][];
+    for (let i = 0; i + 1 < pts.length; i++) {
+      for (let u = 0; u <= 10; u++) {
+        const x = pts[i]![0] + ((pts[i + 1]![0] - pts[i]![0]) * u) / 10;
+        const z = pts[i]![1] + ((pts[i + 1]![1] - pts[i]![1]) * u) / 10;
+        const inside =
+          x > inflated.minX + 1e-6 && x < inflated.maxX - 1e-6 && z > inflated.minZ + 1e-6 && z < inflated.maxZ - 1e-6;
+        expect(inside).toBe(false);
+      }
+    }
+  });
+
+  it("gives up gracefully (straight line) when start or goal sits inside the obstacle", async () => {
+    const { planBasePath } = await import("../src/base");
+    const path = planBasePath([0, 0], [1.2, 0], [table], 0.25);
+    expect(path[path.length - 1]).toEqual([1.2, 0]);
+  });
+});

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Quaternion } from "three";
+import { Quaternion, Vector3 } from "three";
 import {
   findToolFrame,
   findKinematicChains,
@@ -9,6 +9,7 @@ import {
   isMobileBase,
   applyBasePose,
   computeApproachBase,
+  planBasePath,
   planGrasp,
   buildGraspTrajectory,
   carryQuat,
@@ -23,6 +24,7 @@ import {
   calibrateGripper,
   applyGripperCalibrated,
   type BasePose,
+  type RectObstacle,
   type GripperCalibration,
   type KinematicChain,
   type ToolFrame,
@@ -402,6 +404,71 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
       gripper: 0,
     };
 
+    // hand hover offset in the base frame, captured once at the program-start rest
+    robot.updateMatrixWorld(true);
+    const anchorW = toolWorldPosition(robot, tool.link, tool.offset);
+    const c0 = Math.cos(-curBase.yaw);
+    const s0 = Math.sin(-curBase.yaw);
+    const ax0 = anchorW.x - curBase.x;
+    const az0 = anchorW.z - curBase.z;
+    const anchorLocal: [number, number] = [ax0 * c0 + az0 * s0, -ax0 * s0 + az0 * c0];
+    const anchorR = Math.hypot(...anchorLocal);
+    const heading = (x: number, z: number) => Math.atan2(x, z);
+    // the work table is a base obstacle: never glide through it
+    const obstacles: RectObstacle[] = [];
+    if (surfaceYRef.current > 0) {
+      const pts = [...cubes, ...tgts].map((o) => o.position);
+      if (pts.length) {
+        obstacles.push({
+          minX: Math.min(...pts.map((p) => p[0])) - 0.14,
+          maxX: Math.max(...pts.map((p) => p[0])) + 0.14,
+          minZ: Math.min(...pts.map((p) => p[2])) - 0.14,
+          maxZ: Math.max(...pts.map((p) => p[2])) + 0.14,
+        });
+      }
+    }
+    /** Glide (around obstacles) until the hand's hover anchor lands on destXZ. */
+    const walkTo = (destXZ: [number, number], tStart: number): number => {
+      const goal = computeApproachBase(curBase, [
+        curBase.x + anchorLocal[0] * Math.cos(curBase.yaw) + anchorLocal[1] * Math.sin(curBase.yaw),
+        curBase.z - anchorLocal[0] * Math.sin(curBase.yaw) + anchorLocal[1] * Math.cos(curBase.yaw),
+      ], destXZ);
+      const legs = planBasePath([curBase.x, curBase.z], [goal.x, goal.z], obstacles, 0.3);
+      let t = tStart;
+      for (let li = 0; li < legs.length; li++) {
+        const [lx, lz] = legs[li]!;
+        const lastLeg = li === legs.length - 1;
+        // face along the travel direction mid-route; assume the approach yaw at the end
+        const dirX = lx - curBase.x;
+        const dirZ = lz - curBase.z;
+        const yaw = lastLeg ? goal.yaw : heading(dirX, dirZ) - heading(anchorLocal[0], anchorLocal[1]);
+        const next: BasePose = { x: lx, z: lz, yaw };
+        const dist = Math.hypot(dirX, dirZ);
+        const turn = Math.abs(lerpAngle(curBase.yaw, yaw, 1) - curBase.yaw);
+        const dur = Math.max(0.6, dist / WALK_SPEED + turn / TURN_SPEED);
+        walks.push({ t0: t, t1: t + dur, from: { ...curBase }, to: next });
+        t += dur + 0.2;
+        curBase = next;
+      }
+      applyBasePose(robot, curBase);
+      return t;
+    };
+    /** Can the arm hit p (position-only check) from the current base? Restores joints. */
+    const canReach = (pnt: [number, number, number]): boolean => {
+      const saved = names.map((n) => robot.joints[n]!.angle as number);
+      solveIK(robot, tool.link, names, pnt, [0, 0, 0, 1], {
+        iterations: 40,
+        lambda: 0.06,
+        tcpOffset: tool.offset,
+        restPose: rest,
+        restGain: 0.02,
+        rotWeight: 0.1, // position feasibility only
+      });
+      const err = toolWorldPosition(robot, tool.link, tool.offset).distanceTo(new Vector3(...pnt));
+      names.forEach((n, k) => robot.setJointValue(n, saved[k]!));
+      robot.updateMatrixWorld(true);
+      return err < 0.06;
+    };
     const planOnce = (cubePos: [number, number, number]) =>
       planGrasp(robot, tool.link, names, cubePos, {
         candidates: 36,
@@ -420,23 +487,14 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     for (let i = 0; i < cubes.length; i++) {
       const cube = cubes[i]!;
       const target = tgts.length ? tgts[i % tgts.length]!.position : null;
+      // pick side: walk first when clearly out of reach, replan-after-walk as fallback
+      const cubeDist = Math.hypot(cube.position[0] - curBase.x, cube.position[2] - curBase.z);
+      if (mobile && cubeDist > anchorR * 1.35) {
+        tOffset = walkTo([cube.position[0], cube.position[2]], tOffset) + 0.1;
+      }
       let plan = planOnce(cube.position);
       if (!plan && mobile) {
-        // out of reach: glide the base to a comfortable standoff, then retry
-        names.forEach((n, k) => robot.setJointValue(n, rest[k]!));
-        robot.updateMatrixWorld(true);
-        const anchor = toolWorldPosition(robot, tool.link, tool.offset);
-        const next = computeApproachBase(curBase, [anchor.x, anchor.z], [
-          cube.position[0],
-          cube.position[2],
-        ]);
-        const dist = Math.hypot(next.x - curBase.x, next.z - curBase.z);
-        const turn = Math.abs(lerpAngle(curBase.yaw, next.yaw, 1) - curBase.yaw);
-        const dur = Math.max(0.8, dist / WALK_SPEED + turn / TURN_SPEED);
-        walks.push({ t0: tOffset, t1: tOffset + dur, from: { ...curBase }, to: next });
-        tOffset += dur + 0.3;
-        curBase = next;
-        applyBasePose(robot, next);
+        tOffset = walkTo([cube.position[0], cube.position[2]], tOffset) + 0.1;
         plan = planOnce(cube.position);
       }
       if (!plan) {
@@ -450,6 +508,24 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
         skipped.push(i + 1);
         continue;
       }
+      // place side: a far target needs a carry-walk (mobile) or an honest refusal (fixed)
+      let placeWalk = false;
+      if (target) {
+        const tDist = Math.hypot(target[0] - curBase.x, target[2] - curBase.z);
+        const placeOk = tDist <= anchorR * 1.35 && canReach([target[0], target[1] + 0.05, target[2]]);
+        if (!placeOk) {
+          if (!mobile) {
+            if (cubes.length === 1) {
+              setError("放置点超出工作空间,把 target 拖近一点再试");
+              setKeyframes([]);
+              return;
+            }
+            skipped.push(i + 1);
+            continue;
+          }
+          placeWalk = true;
+        }
+      }
       // segment eases in from wherever the arm currently is
       robot.updateMatrixWorld(true);
       const hp = toolWorldPosition(robot, tool.link, tool.offset);
@@ -460,6 +536,12 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
       });
       if (target) {
         const last = seg[seg.length - 1]!;
+        let placeStart = last.t;
+        if (placeWalk) {
+          // glide while carrying: the walk window lives between the lift and the place
+          const walkEnd = walkTo([target[0], target[2]], tOffset + last.t + 0.2);
+          placeStart = walkEnd - tOffset + 0.1;
+        }
         const q = carryQuat(plan.graspQuat, cube.position, target);
         const above: [number, number, number] = [
           target[0],
@@ -474,10 +556,10 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
         ];
         seg = [
           ...seg,
-          { t: last.t + 1.2, position: above, quaternion: q, gripper: 1 },
-          { t: last.t + 2.0, position: at, quaternion: q, gripper: 1 },
-          { t: last.t + 2.6, position: at, quaternion: q, gripper: 0 },
-          { t: last.t + 3.4, position: above, quaternion: q, gripper: 0 },
+          { t: placeStart + 1.2, position: above, quaternion: q, gripper: 1 },
+          { t: placeStart + 2.0, position: at, quaternion: q, gripper: 1 },
+          { t: placeStart + 2.6, position: at, quaternion: q, gripper: 0 },
+          { t: placeStart + 3.4, position: above, quaternion: q, gripper: 0 },
         ];
       }
       const segShifted = seg.map((k) => ({ ...k, t: k.t + tOffset }));
