@@ -7,7 +7,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "vitest run"
+    "test": "vitest run",
+    "predev": "node -e \"const f=require('fs');f.copyFileSync('node_modules/mujoco/mujoco.wasm','public/mujoco.wasm');f.copyFileSync('node_modules/mujoco/mujoco.js','public/mujoco.mjs')\"",
+    "prebuild": "node -e \"const f=require('fs');f.copyFileSync('node_modules/mujoco/mujoco.wasm','public/mujoco.wasm');f.copyFileSync('node_modules/mujoco/mujoco.js','public/mujoco.mjs')\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.1",
@@ -16,7 +18,9 @@
     "@urdflow/urdf-web": "workspace:*",
     "fflate": "0.8.3",
     "lucide-react": "^1.17.0",
+    "mujoco": "^3.1.16",
     "next": "15.1.0",
+    "onnxruntime-web": "^1.26.0",
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "three": "0.184.0"

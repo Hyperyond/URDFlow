@@ -1,0 +1,188 @@
+"use client";
+
+/**
+ * Physics-locomotion spike (P0): Unitree G1 standing under REAL physics in the
+ * browser. MuJoCo (official WASM, pthread build) runs inside a Web Worker — its
+ * blocking FS/compile calls deadlock the main thread by design — and publishes
+ * qpos through a SharedArrayBuffer (we are crossOriginIsolated for the pthread
+ * pool anyway). Rendering drives our existing URDF model from that state.
+ * Acceptance: G1 holds its 'home' keyframe under gravity in real time and
+ * survives pushes. Next (P1): ONNX joystick policy → walking along planBasePath.
+ */
+
+import { useEffect, useRef, useState } from "react";
+import {
+  Scene,
+  PerspectiveCamera,
+  WebGLRenderer,
+  HemisphereLight,
+  DirectionalLight,
+  GridHelper,
+  Mesh,
+  PlaneGeometry,
+  MeshStandardMaterial,
+  Quaternion,
+  Vector3,
+  ACESFilmicToneMapping,
+} from "three";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { loadURDFFromURL, type URDFRobot } from "@urdflow/urdf-web";
+
+const MJCF_DIR = "/robots/g1/mjcf";
+const TIMESTEP = 0.004; // matches g1_mjx.xml
+
+export default function WalkLab() {
+  const mountRef = useRef<HTMLDivElement>(null);
+  const workerRef = useRef<Worker | null>(null);
+  const [status, setStatus] = useState("启动中…");
+  const [stats, setStats] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    let raf = 0;
+    let renderer: WebGLRenderer | null = null;
+    let controls: OrbitControls | null = null;
+    let worker: Worker | null = null;
+
+    (async () => {
+      const mount = mountRef.current;
+      if (!mount) return;
+
+      // ---- three.js view (physics owns the state; we render our URDF model) ----
+      const scene = new Scene();
+      const camera = new PerspectiveCamera(45, mount.clientWidth / mount.clientHeight, 0.05, 50);
+      camera.position.set(2.4, 1.6, 2.4);
+      renderer = new WebGLRenderer({ antialias: true });
+      renderer.setSize(mount.clientWidth, mount.clientHeight);
+      renderer.setClearColor(0xeef1f4);
+      renderer.toneMapping = ACESFilmicToneMapping;
+      mount.appendChild(renderer.domElement);
+      controls = new OrbitControls(camera, renderer.domElement);
+      controls.target.set(0, 0.7, 0);
+      scene.add(new HemisphereLight(0xffffff, 0xcdd2da, 1.0));
+      const sun = new DirectionalLight(0xfff6ea, 1.2);
+      sun.position.set(5, 8, 4);
+      scene.add(sun);
+      const ground = new Mesh(new PlaneGeometry(20, 20), new MeshStandardMaterial({ color: 0xd4d7db, roughness: 0.9 }));
+      ground.rotation.x = -Math.PI / 2;
+      scene.add(ground);
+      scene.add(new GridHelper(20, 40, 0xaab0ba, 0xc8ccd2));
+
+      setStatus("加载 URDF 渲染模型…");
+      const robot: URDFRobot = await loadURDFFromURL("/robots/g1/g1.urdf");
+      if (!alive) return;
+      scene.add(robot);
+
+      // ---- fetch the MJCF on the main thread, hand it to the worker ----
+      setStatus("加载 G1 物理模型…");
+      const [sceneXml, g1XmlRaw] = await Promise.all([
+        fetch(`${MJCF_DIR}/scene_mjx.xml`).then((r) => r.text()),
+        fetch(`${MJCF_DIR}/g1_mjx.xml`).then((r) => r.text()),
+      ]);
+      // The MJX model collides with primitives only — every mesh geom is
+      // class="visual" and all inertials are explicit. We render via our URDF model,
+      // so strip the visual meshes entirely: physics-identical, nothing to fetch,
+      // and mj_loadXML stops needing the thread pool for convex-hull builds.
+      const g1Xml = g1XmlRaw
+        .replace(/^\s*<mesh\b[^>]*\/>\s*$/gm, "")
+        .replace(/^\s*<geom\b[^>]*\bmesh="[^"]*"[^>]*\/>\s*$/gm, "");
+      // builtin texture generation is a hang suspect in the wasm build — the ground
+      // can be a plain-colored plane, we render our own world anyway
+      const sceneStripped = sceneXml
+        .replace(/<texture\b[\s\S]*?\/>/g, "")
+        .replace(/<material\b[\s\S]*?\/>/g, "")
+        .replace(/\s*material="[^"]*"/g, "");
+      // joint order in the MJCF body tree = qpos layout after the 7-dof free joint
+      const jointOrder = [...g1Xml.matchAll(/<joint name="([^"]+)"/g)].map((m) => m[1]!);
+      if (!alive) return;
+
+      setStatus("编译模型(Worker 内 MuJoCo)…");
+      const sab = new SharedArrayBuffer(8 * (1 + 7 + jointOrder.length));
+      const state = new Float64Array(sab);
+      worker = new Worker(new URL("./physics.worker.ts", import.meta.url));
+      workerRef.current = worker;
+      await new Promise<void>((resolve, reject) => {
+        worker!.onmessage = (e: MessageEvent<{ type: string; message?: string; step?: string }>) => {
+          if (e.data.type === "ready") resolve();
+          else if (e.data.type === "error") reject(new Error(e.data.message));
+          else if (e.data.type === "progress") setStatus(`Worker: ${e.data.step}…`);
+        };
+        worker!.postMessage({ type: "boot", sceneXml: sceneStripped, g1Xml, assets: [], sab, timestep: TIMESTEP });
+      });
+      if (!alive) return;
+      setStatus(""); // running
+
+      // ---- render loop: read shared state, drive the URDF model ----
+      const qx90 = new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), -Math.PI / 2);
+      const tmpQ = new Quaternion();
+      let frames = 0;
+      let statT = performance.now();
+      const tick = (now: number) => {
+        if (!alive) return;
+        // MuJoCo Z-up world → three Y-up world: p=(x,z,-y), q = Rx(-90°)∘q_mj
+        robot.position.set(state[1]!, state[3]!, -state[2]!);
+        tmpQ.set(state[5]!, state[6]!, state[7]!, state[4]!); // wxyz → xyzw
+        robot.quaternion.copy(qx90.clone().multiply(tmpQ));
+        for (let j = 0; j < jointOrder.length; j++) {
+          robot.setJointValue(jointOrder[j]!, state[8 + j]!);
+        }
+        controls?.update();
+        renderer!.render(scene, camera);
+        frames++;
+        if (now - statT > 500) {
+          setStats(
+            `渲染 ${Math.round((frames * 1000) / (now - statT))} fps · 物理 ${TIMESTEP * 1000}ms/步 · t=${state[0]!.toFixed(1)}s · 骨盆高 ${state[3]!.toFixed(2)}m`,
+          );
+          frames = 0;
+          statT = now;
+        }
+        raf = requestAnimationFrame(tick);
+      };
+      raf = requestAnimationFrame(tick);
+    })().catch((e) => {
+      console.error(e);
+      setStatus(`启动失败: ${e instanceof Error ? e.message : String(e)}`);
+    });
+
+    return () => {
+      alive = false;
+      cancelAnimationFrame(raf);
+      worker?.terminate();
+      controls?.dispose();
+      renderer?.dispose();
+      if (renderer?.domElement.parentElement) renderer.domElement.parentElement.removeChild(renderer.domElement);
+    };
+  }, []);
+
+  return (
+    <div className="relative h-screen w-screen bg-[#0e1116]">
+      <div ref={mountRef} className="h-full w-full" />
+      <div className="absolute left-3 top-3 flex flex-col gap-2 text-xs">
+        <div className="rounded border border-white/10 bg-black/60 px-3 py-2 text-zinc-200">
+          <div className="font-semibold">物理实验台 · Unitree G1(MuJoCo WASM)</div>
+          <div className="mt-1 text-zinc-400">
+            {status || "真实物理站立中 — P1 将接入 ONNX 行走策略"}
+            {stats && <div>{stats}</div>}
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => workerRef.current?.postMessage({ type: "reset" })}
+            className="rounded bg-cyan-600/80 px-3 py-1.5 text-white hover:bg-cyan-500"
+          >
+            重置
+          </button>
+          <button
+            onClick={() => workerRef.current?.postMessage({ type: "push", vx: 0.7, vy: 0.3 })}
+            className="rounded bg-amber-600/80 px-3 py-1.5 text-white hover:bg-amber-500"
+          >
+            推一下
+          </button>
+          <a href="/" className="rounded bg-white/10 px-3 py-1.5 text-zinc-200 hover:bg-white/20">
+            返回编辑器
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
