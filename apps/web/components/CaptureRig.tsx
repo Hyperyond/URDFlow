@@ -14,6 +14,11 @@ export interface CaptureRigProps {
   frontCanvas: RefObject<HTMLCanvasElement | null>;
   topCanvas: RefObject<HTMLCanvasElement | null>;
   boxPosition?: [number, number, number];
+  /** User-dragged camera positions; when set they override the auto-fit framing. */
+  frontPos?: [number, number, number] | null;
+  topPos?: [number, number, number] | null;
+  /** Reports the auto-fitted positions once, so the scene can seed draggable proxies. */
+  onAutoFrame?: (front: [number, number, number], top: [number, number, number]) => void;
   every?: number; // render to the panels every N frames (perf)
 }
 
@@ -24,7 +29,16 @@ export interface CaptureRigProps {
  * async, so we (re)enable the capture layer on them every frame and re-fit framing
  * periodically once the bounding box settles.
  */
-export function CaptureRig({ robot, frontCanvas, topCanvas, boxPosition, every = 2 }: CaptureRigProps) {
+export function CaptureRig({
+  robot,
+  frontCanvas,
+  topCanvas,
+  boxPosition,
+  frontPos,
+  topPos,
+  onAutoFrame,
+  every = 2,
+}: CaptureRigProps) {
   const { gl, scene } = useThree();
   const frontCam = useMemo(() => new PerspectiveCamera(50, 1, 0.01, 100), []);
   const topCam = useMemo(() => new PerspectiveCamera(58, 1, 0.01, 100), []);
@@ -35,7 +49,9 @@ export function CaptureRig({ robot, frontCanvas, topCanvas, boxPosition, every =
   const flip = useMemo(() => new Uint8ClampedArray(W * H * 4), []);
   const frameRef = useRef(0);
 
-  // fit both cameras to the actual robot bounds (+ target box)
+  // fit both cameras to the actual robot bounds (+ target box). User-dragged positions
+  // (frontPos/topPos) win; otherwise we auto-fit and report the result up so the scene
+  // can seed its draggable proxies at the same spot.
   const reframe = useCallback(() => {
     const bbox = new Box3();
     if (robot) {
@@ -48,13 +64,23 @@ export function CaptureRig({ robot, frontCanvas, topCanvas, boxPosition, every =
     const size = bbox.getSize(new Vector3());
     const radius = Math.max(size.x, size.y, size.z, 0.3) * 0.5 + 0.12;
     const fdist = (radius / Math.tan((frontCam.fov * Math.PI) / 360)) * 1.25;
-    frontCam.position.set(center.x + fdist * 0.62, center.y + fdist * 0.5, center.z + fdist * 0.62);
-    frontCam.lookAt(center);
+    const fitFront: [number, number, number] = [
+      center.x + fdist * 0.62,
+      center.y + fdist * 0.5,
+      center.z + fdist * 0.62,
+    ];
     const tdist = (radius / Math.tan((topCam.fov * Math.PI) / 360)) * 1.25;
-    topCam.position.set(center.x, center.y + tdist, center.z);
+    const fitTop: [number, number, number] = [center.x, center.y + tdist, center.z];
+
+    frontCam.position.set(...(frontPos ?? fitFront));
+    frontCam.lookAt(center);
     topCam.up.set(0, 0, -1); // down-looking camera needs a non-parallel up
+    topCam.position.set(...(topPos ?? fitTop));
     topCam.lookAt(center);
-  }, [robot, boxPosition, frontCam, topCam]);
+
+    // seed the proxies once, before the user has taken control of either camera
+    if ((!frontPos || !topPos) && onAutoFrame) onAutoFrame(fitFront, fitTop);
+  }, [robot, boxPosition, frontPos, topPos, onAutoFrame, frontCam, topCam]);
 
   useEffect(() => {
     frontCam.layers.set(CAPTURE_LAYER);

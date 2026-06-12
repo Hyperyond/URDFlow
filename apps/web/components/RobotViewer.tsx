@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, type RefObject } from "react";
+import { useState, useEffect, useMemo, type ReactNode, type RefObject } from "react";
 import { Canvas } from "@react-three/fiber";
 import {
   OrbitControls,
@@ -12,7 +12,7 @@ import {
   Environment,
   Lightformer,
 } from "@react-three/drei";
-import { ACESFilmicToneMapping, Box3, type Mesh } from "three";
+import { ACESFilmicToneMapping, Box3, BufferGeometry, Float32BufferAttribute, Vector3, type Object3D } from "three";
 import type { URDFRobot } from "@urdflow/urdf-web";
 import { CaptureRig } from "./CaptureRig";
 
@@ -20,6 +20,11 @@ export interface SceneObj {
   id: string;
   position: [number, number, number];
   color?: string;
+}
+
+export interface CameraPose {
+  front: [number, number, number] | null;
+  top: [number, number, number] | null;
 }
 
 export interface RobotViewerProps {
@@ -32,64 +37,139 @@ export interface RobotViewerProps {
   onSelect: (id: string | null) => void;
   onMoveObject: (id: string, p: [number, number, number]) => void;
   onMoveTarget: (id: string, p: [number, number, number]) => void;
+  cameraPoses?: CameraPose;
+  onMoveCamera?: (which: "front" | "top", p: [number, number, number]) => void;
+  onAutoFrameCameras?: (front: [number, number, number], top: [number, number, number]) => void;
   captureRefs?: { front: RefObject<HTMLCanvasElement | null>; top: RefObject<HTMLCanvasElement | null> };
 }
 
-function DraggableBox({
+/**
+ * A pose-able scene item: renders `children` at `position`, click-to-select, and a
+ * translate gizmo while selected. Meshes are promoted to the capture layer (1) so they
+ * show in the camera feeds unless `captureVisible` is false (abstract markers / camera
+ * proxies stay viewport-only).
+ */
+function SceneItem({
   position,
-  color,
   selected,
-  wireframe,
   captureVisible = true,
+  showY = false,
   onSelect,
   onMove,
+  children,
 }: {
   position: [number, number, number];
-  color: string;
   selected: boolean;
-  wireframe?: boolean;
   captureVisible?: boolean;
+  showY?: boolean;
   onSelect: () => void;
   onMove: (p: [number, number, number]) => void;
+  children: ReactNode;
 }) {
-  const [mesh, setMesh] = useState<Mesh | null>(null);
+  const [obj, setObj] = useState<Object3D | null>(null);
   useEffect(() => {
-    if (captureVisible) mesh?.layers.enable(1); // target marker stays off the camera layer
-  }, [mesh, captureVisible]);
+    if (captureVisible) obj?.traverse((o) => o.layers.enable(1));
+  }, [obj, captureVisible]);
   return (
     <>
-      <mesh
-        ref={setMesh}
+      <group
+        ref={setObj}
         position={position}
         onClick={(e) => {
           e.stopPropagation();
           onSelect();
         }}
       >
-        <boxGeometry args={[0.05, 0.05, 0.05]} />
-        <meshStandardMaterial
-          color={color}
-          emissive={color}
-          emissiveIntensity={selected ? 0.5 : 0.25}
-          roughness={0.4}
-          wireframe={wireframe}
-          transparent={wireframe}
-          opacity={wireframe ? 0.7 : 1}
-        />
-      </mesh>
-      {selected && mesh && (
+        {children}
+      </group>
+      {selected && obj && (
         <TransformControls
-          object={mesh}
+          object={obj}
           mode="translate"
-          showY={false}
+          showY={showY}
           size={0.5}
           onObjectChange={() => {
-            const p = mesh.position;
+            const p = obj.position;
             onMove([p.x, p.y, p.z]);
           }}
         />
       )}
     </>
+  );
+}
+
+/**
+ * UE/Unity-style camera gizmo: a small camera body with a lens barrel pointing along
+ * +Z and a wireframe view-frustum opening toward what the capture camera actually
+ * sees. The whole group lookAt()s the capture target, so dragging the proxy keeps the
+ * frustum honestly indicating the feed's direction.
+ */
+function CameraProxy({
+  color,
+  selected,
+  position,
+  lookAt,
+}: {
+  color: string;
+  selected: boolean;
+  position: [number, number, number];
+  lookAt: [number, number, number];
+}) {
+  const [grp, setGrp] = useState<Object3D | null>(null);
+  // re-orient whenever the proxy is dragged or the capture target moves
+  useEffect(() => {
+    grp?.lookAt(new Vector3(...lookAt)); // plain Object3D: +Z faces the target
+  }, [grp, position, lookAt]);
+
+  // wireframe frustum: apex at the lens, opening forward (16:10-ish plate)
+  const frustum = useMemo(() => {
+    const z = 0.16;
+    const hw = 0.062;
+    const hh = 0.042;
+    const c = [
+      [-hw, -hh, z],
+      [hw, -hh, z],
+      [hw, hh, z],
+      [-hw, hh, z],
+    ];
+    const pts: number[] = [];
+    for (let i = 0; i < 4; i++) {
+      pts.push(0, 0, 0.028, ...c[i]!); // apex → corners
+      pts.push(...c[i]!, ...c[(i + 1) % 4]!); // far plate edges
+    }
+    // "up" tick on the far plate (Unity-style top indicator)
+    pts.push(-hw * 0.35, hh, z, 0, hh + 0.022, z, 0, hh + 0.022, z, hw * 0.35, hh, z);
+    const g = new BufferGeometry();
+    g.setAttribute("position", new Float32BufferAttribute(pts, 3));
+    return g;
+  }, []);
+
+  return (
+    <group ref={setGrp}>
+      {/* body */}
+      <mesh>
+        <boxGeometry args={[0.052, 0.038, 0.07]} />
+        <meshStandardMaterial color="#2b2e36" metalness={0.4} roughness={0.45} />
+      </mesh>
+      {/* film reel bumps on top (classic editor camera silhouette) */}
+      <mesh position={[0, 0.028, -0.014]} rotation={[0, 0, Math.PI / 2]}>
+        <cylinderGeometry args={[0.016, 0.016, 0.05, 20]} />
+        <meshStandardMaterial color="#2b2e36" metalness={0.4} roughness={0.45} />
+      </mesh>
+      <mesh position={[0, 0.028, 0.018]} rotation={[0, 0, Math.PI / 2]}>
+        <cylinderGeometry args={[0.012, 0.012, 0.05, 20]} />
+        <meshStandardMaterial color="#2b2e36" metalness={0.4} roughness={0.45} />
+      </mesh>
+      {/* lens barrel pointing forward */}
+      <mesh position={[0, 0, 0.042]} rotation={[Math.PI / 2, 0, 0]}>
+        <cylinderGeometry args={[0.013, 0.016, 0.022, 20]} />
+        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={selected ? 0.7 : 0.35} roughness={0.35} />
+      </mesh>
+      {/* view-frustum wireframe — the actual "where is it looking" indicator */}
+      <lineSegments geometry={frustum}>
+        <lineBasicMaterial color={color} transparent opacity={selected ? 0.95 : 0.55} />
+      </lineSegments>
+    </group>
   );
 }
 
@@ -102,10 +182,28 @@ export function RobotViewer({
   onSelect,
   onMoveObject,
   onMoveTarget,
+  cameraPoses,
+  onMoveCamera,
+  onAutoFrameCameras,
   captureRefs,
 }: RobotViewerProps) {
   useEffect(() => {
     robot?.traverse((o) => o.layers.enable(1));
+  }, [robot]);
+
+  // where the capture cameras aim — camera gizmo frustums orient toward this
+  const [aim, setAim] = useState<[number, number, number]>([0, 0.3, 0]);
+  useEffect(() => {
+    if (!robot) return;
+    const t = setTimeout(() => {
+      robot.updateMatrixWorld(true);
+      const b = new Box3().setFromObject(robot);
+      if (!b.isEmpty()) {
+        const c = b.getCenter(new Vector3());
+        setAim([c.x, c.y, c.z]);
+      }
+    }, 300); // after meshes load + ground fit
+    return () => clearTimeout(t);
   }, [robot]);
 
   // sit the robot on the ground: lift so its lowest point rests on y=0 (no floor
@@ -154,32 +252,83 @@ export function RobotViewer({
             frontCanvas={captureRefs.front}
             topCanvas={captureRefs.top}
             boxPosition={objects[0]?.position}
+            frontPos={cameraPoses?.front}
+            topPos={cameraPoses?.top}
+            onAutoFrame={onAutoFrameCameras}
           />
         )}
 
-        {/* scene objects: cubes to grasp + optional target placement (wireframe) */}
+        {/* scene objects: cubes to grasp */}
         {objects.map((obj) => (
-          <DraggableBox
+          <SceneItem
             key={obj.id}
             position={obj.position}
-            color={obj.color ?? "#22d3ee"}
             selected={selectedId === obj.id}
             onSelect={() => onSelect(obj.id)}
             onMove={(p) => onMoveObject(obj.id, p)}
-          />
+          >
+            <mesh>
+              <boxGeometry args={[0.05, 0.05, 0.05]} />
+              <meshStandardMaterial
+                color={obj.color ?? "#22d3ee"}
+                emissive={obj.color ?? "#22d3ee"}
+                emissiveIntensity={selectedId === obj.id ? 0.5 : 0.25}
+                roughness={0.4}
+              />
+            </mesh>
+          </SceneItem>
         ))}
+
+        {/* targets: translucent wireframe goal markers (viewport-only) */}
         {targets.map((t) => (
-          <DraggableBox
+          <SceneItem
             key={t.id}
             position={t.position}
-            color="#f59e0b"
-            wireframe
-            captureVisible={false}
             selected={selectedId === t.id}
+            captureVisible={false}
             onSelect={() => onSelect(t.id)}
             onMove={(p) => onMoveTarget(t.id, p)}
-          />
+          >
+            <mesh>
+              <boxGeometry args={[0.05, 0.05, 0.05]} />
+              <meshStandardMaterial
+                color="#f59e0b"
+                emissive="#f59e0b"
+                emissiveIntensity={selectedId === t.id ? 0.5 : 0.25}
+                roughness={0.4}
+                wireframe
+                transparent
+                opacity={0.7}
+              />
+            </mesh>
+          </SceneItem>
         ))}
+
+        {/* draggable camera proxies — fine-tune observation.front / observation.top in-scene */}
+        {cameraPoses?.front && onMoveCamera && (
+          <SceneItem
+            position={cameraPoses.front}
+            selected={selectedId === "cam-front"}
+            captureVisible={false}
+            showY
+            onSelect={() => onSelect("cam-front")}
+            onMove={(p) => onMoveCamera("front", p)}
+          >
+            <CameraProxy color="#22d3ee" selected={selectedId === "cam-front"} position={cameraPoses.front} lookAt={aim} />
+          </SceneItem>
+        )}
+        {cameraPoses?.top && onMoveCamera && (
+          <SceneItem
+            position={cameraPoses.top}
+            selected={selectedId === "cam-top"}
+            captureVisible={false}
+            showY
+            onSelect={() => onSelect("cam-top")}
+            onMove={(p) => onMoveCamera("top", p)}
+          >
+            <CameraProxy color="#a78bfa" selected={selectedId === "cam-top"} position={cameraPoses.top} lookAt={aim} />
+          </SceneItem>
+        )}
 
         {/* work table for tall robots (humanoids): hugs the scene content and stays
             clear of wherever the robot is standing — no slab through its legs */}

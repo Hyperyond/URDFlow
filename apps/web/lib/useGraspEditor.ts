@@ -432,22 +432,29 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
       robot.updateMatrixWorld(true);
       return err < 0.06;
     };
-    const planOnce = (cubePos: [number, number, number]) =>
-      planGrasp(robot, tool.link, names, cubePos, {
+    const planOnce = (cubePos: [number, number, number]) => {
+      const base = {
         candidates: 36,
-        reachThreshold: 0.05,
+        // tight: the cube is only 2.5cm half-width — a slack TCP tolerance IS a
+        // finger inside the cube. Plans that can't land this close get rejected.
+        reachThreshold: 0.015,
         approachWeight: 2.0,
         tcpOffset: tool.offset,
         toolAxis: tool.axis,
-        // high-DOF chains can afford steep top-down approaches (slanted ones let a
-        // finger sweep through the cube); under-actuated arms keep the slack
-        minApproachY: names.length >= 7 ? 0.6 : 0.25,
         clearance: surfaceYRef.current + CUBE_HALF,
         restPose: rest,
         restGain: names.length >= 8 ? 0.06 : 0.03,
         limits: softLimitsRef.current,
         openAxis: calib?.openAxis,
-      });
+      };
+      // two-pass: steep top-down first for EVERY arm (slanted approaches sweep a
+      // finger through the cube on the way down); only if nothing steep is reachable
+      // relax the cone — better a slanted grasp than a refusal
+      return (
+        planGrasp(robot, tool.link, names, cubePos, { ...base, minApproachY: 0.6 }) ??
+        planGrasp(robot, tool.link, names, cubePos, { ...base, minApproachY: 0.25 })
+      );
+    };
 
     for (let i = 0; i < cubes.length; i++) {
       const cube = cubes[i]!;

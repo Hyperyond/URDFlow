@@ -12,11 +12,44 @@ import {
   type URDFRobot,
   type URDFFileEntry,
 } from "@urdflow/urdf-web";
-import { PRESETS, type RobotPreset } from "./presets";
+import { Mesh, MeshStandardMaterial, Color, type Object3D } from "three";
+import { PRESETS, type RobotPreset, type MaterialRule } from "./presets";
 
 type Source =
-  | { kind: "preset"; url: string; label: string; readyPose?: Record<string, number> }
+  | { kind: "preset"; url: string; label: string; readyPose?: Record<string, number>; materials?: MaterialRule[] }
   | { kind: "files"; entries: URDFFileEntry[]; label: string };
+
+/**
+ * Paint a preset's realistic material scheme onto the loaded robot. STL-only URDFs
+ * arrive as a flat "white model"; we resolve each mesh's owning link and apply the
+ * first matching rule (one shared material per rule).
+ */
+function applyMaterials(robot: URDFRobot, rules?: MaterialRule[]) {
+  if (!rules?.length) return;
+  const linkNames = new Set(Object.keys((robot as { links?: Record<string, unknown> }).links ?? {}));
+  const cache = new Map<MaterialRule, MeshStandardMaterial>();
+  const matFor = (rule: MaterialRule) => {
+    let m = cache.get(rule);
+    if (!m) {
+      m = new MeshStandardMaterial({
+        color: new Color(rule.color),
+        metalness: rule.metalness ?? 0.3,
+        roughness: rule.roughness ?? 0.5,
+      });
+      cache.set(rule, m);
+    }
+    return m;
+  };
+  robot.traverse((o: Object3D) => {
+    if (!(o instanceof Mesh)) return;
+    let link = "";
+    for (let p: Object3D | null = o; p; p = p.parent) {
+      if (linkNames.has(p.name)) { link = p.name; break; }
+    }
+    const rule = rules.find((r) => r.match.test(link) || r.match.test(o.name));
+    if (rule) o.material = matFor(rule);
+  });
+}
 
 /**
  * Put the arm into a natural ready pose: preset-provided joints win, everything else
@@ -42,6 +75,7 @@ export function useRobotSource() {
     url: PRESETS[0]!.url,
     label: PRESETS[0]!.name,
     readyPose: PRESETS[0]!.readyPose,
+    materials: PRESETS[0]!.materials,
   });
   const [robot, setRobot] = useState<URDFRobot | null>(null);
   const [model, setModel] = useState<JointInfo[]>([]);
@@ -65,6 +99,7 @@ export function useRobotSource() {
         : loadURDFFromFiles(source.entries, { onProgress });
     p.then((r) => {
       if (!alive) return;
+      if (source.kind === "preset") applyMaterials(r, source.materials);
       applyReadyPose(r, source.kind === "preset" ? source.readyPose : undefined);
       setRobot(r);
       setModel(getJointModel(r));
@@ -81,7 +116,8 @@ export function useRobotSource() {
   }, [source]);
 
   const loadPreset = useCallback(
-    (p: RobotPreset) => setSource({ kind: "preset", url: p.url, label: p.name, readyPose: p.readyPose }),
+    (p: RobotPreset) =>
+      setSource({ kind: "preset", url: p.url, label: p.name, readyPose: p.readyPose, materials: p.materials }),
     [],
   );
   const loadFiles = useCallback(

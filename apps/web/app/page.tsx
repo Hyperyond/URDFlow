@@ -11,7 +11,7 @@ import { MenuBar } from "../components/MenuBar";
 import { SceneOutliner } from "../components/SceneOutliner";
 import { CameraPanel } from "../components/CameraPanel";
 import { Timeline } from "../components/Timeline";
-import { RobotViewer } from "../components/RobotViewer";
+import { RobotViewer, type CameraPose } from "../components/RobotViewer";
 import { LoadingOverlay } from "../components/LoadingOverlay";
 
 export default function Page() {
@@ -20,6 +20,12 @@ export default function Page() {
   const [uploaded, setUploaded] = useState<{ label: string }[]>([]);
   const frontCamRef = useRef<HTMLCanvasElement>(null);
   const topCamRef = useRef<HTMLCanvasElement>(null);
+  // camera positions: null until CaptureRig reports its auto-fit, then user-draggable
+  const [camPose, setCamPose] = useState<CameraPose>({ front: null, top: null });
+  // a new robot reframes from scratch — drop any manual camera placement
+  useEffect(() => {
+    setCamPose({ front: null, top: null });
+  }, [r.source]);
 
   async function handleFileList(list: FileList) {
     const entries = await entriesFromFileList(list);
@@ -88,6 +94,11 @@ export default function Page() {
             onSelect={ed.setSelectedId}
             onMoveObject={ed.moveObject}
             onMoveTarget={ed.moveTarget}
+            cameraPoses={camPose}
+            onMoveCamera={(which, p) => setCamPose((c) => ({ ...c, [which]: p }))}
+            onAutoFrameCameras={(front, top) =>
+              setCamPose((c) => ({ front: c.front ?? front, top: c.top ?? top }))
+            }
             captureRefs={{ front: frontCamRef, top: topCamRef }}
           />
           {r.loading && <LoadingOverlay progress={r.progress} />}
