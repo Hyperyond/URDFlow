@@ -1,0 +1,25 @@
+[project]
+name = "urdflow-api"
+version = "0.1.0"
+description = "URDFlow backend — the heavy half of the data workbench: training-bound dataset export and conversion that the browser can't do."
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "numpy>=1.26",
+    "pyarrow>=16",
+    "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "httpx>=0.27"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["urdflow_api"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
