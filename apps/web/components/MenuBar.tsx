@@ -60,15 +60,9 @@ export function MenuBar({ robotLabel, presets, uploaded, onPickPreset, onPickFil
 
       <a
         href="/studio"
-        className="rounded border border-accent/40 bg-accent/10 px-2 py-1 font-medium text-accent hover:bg-accent/20"
+        className="mr-1 rounded border border-accent/40 bg-accent/10 px-2 py-1 font-medium text-accent hover:bg-accent/20"
       >
         Workbench ↗
-      </a>
-      <a href="/player" className="rounded px-2 py-1 text-zinc-300 hover:bg-white/10">
-        Player
-      </a>
-      <a href="/dataset" className="mr-1 rounded px-2 py-1 text-zinc-300 hover:bg-white/10">
-        Dataset QC
       </a>
 
       {/* Import lives here as the "easter egg" under File */}

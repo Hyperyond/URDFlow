@@ -31,14 +31,14 @@ export default function StudioHome() {
         </p>
         <div className="mt-8 flex gap-3">
           <Link
-            href="/dataset"
+            href="/studio/quality"
             className="group flex items-center gap-2 rounded-lg bg-accent px-5 py-2.5 font-medium text-[#06181c] transition-transform hover:scale-[1.02]"
           >
             Run QC
             <span className="transition-transform group-hover:translate-x-0.5">→</span>
           </Link>
           <Link
-            href="/player"
+            href="/studio/playback"
             className="rounded-lg border border-line-strong px-5 py-2.5 font-medium text-zinc-200 transition-colors hover:bg-white/5"
           >
             Trajectory Player

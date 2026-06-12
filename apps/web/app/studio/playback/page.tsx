@@ -346,7 +346,7 @@ export default function PlayerPage() {
 
   return (
     <div
-      className="relative h-screen w-screen bg-[#10141a]"
+      className="relative h-full w-full bg-[#10141a]"
       onDragOver={(e) => {
         e.preventDefault();
         setDragOver(true);
@@ -394,12 +394,6 @@ export default function PlayerPage() {
           >
             Run QC
           </button>
-          <a href="/dataset" className="rounded bg-white/10 px-3 py-1.5 text-zinc-200 hover:bg-white/20">
-            Dataset QC
-          </a>
-          <a href="/" className="rounded bg-white/10 px-3 py-1.5 text-zinc-200 hover:bg-white/20">
-            Editor
-          </a>
         </div>
       </div>
 

@@ -166,7 +166,7 @@ export default function DatasetPage() {
 
   return (
     <div
-      className="min-h-screen bg-[#10141a] text-zinc-200"
+      className="min-h-full bg-[#10141a] text-zinc-200"
       onDragOver={(e) => {
         e.preventDefault();
         setDragOver(true);
@@ -192,12 +192,6 @@ export default function DatasetPage() {
             <button onClick={loadBuiltin} className="rounded bg-white/10 px-3 py-1.5 hover:bg-white/20">
               Load samples
             </button>
-            <a href="/player" className="rounded bg-white/10 px-3 py-1.5 hover:bg-white/20">
-              Player
-            </a>
-            <a href="/" className="rounded bg-white/10 px-3 py-1.5 hover:bg-white/20">
-              Editor
-            </a>
           </div>
         </div>
 

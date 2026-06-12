@@ -61,29 +61,4 @@ export const PRESETS: RobotPreset[] = [
       joint6: 0,
     },
   },
-  {
-    id: "g1",
-    name: "Unitree G1 (humanoid + gripper)",
-    url: "/robots/g1/g1.urdf",
-    // both arms in a table-work pose — auto hand selection may pick either one
-    readyPose: {
-      left_shoulder_pitch_joint: -0.4,
-      left_shoulder_roll_joint: 0.25,
-      left_elbow_joint: 0.9,
-      right_shoulder_pitch_joint: -0.4,
-      right_shoulder_roll_joint: -0.25,
-      right_elbow_joint: 0.9,
-    },
-  },
-  {
-    id: "h1",
-    name: "Unitree H1 (humanoid)",
-    url: "/robots/h1/h1.urdf",
-    readyPose: {
-      left_shoulder_pitch_joint: -0.3,
-      left_elbow_joint: 0.6,
-      right_shoulder_pitch_joint: -0.3,
-      right_elbow_joint: 0.6,
-    },
-  },
 ];
