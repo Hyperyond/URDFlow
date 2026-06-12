@@ -207,7 +207,7 @@ async function boot(msg: BootMsg): Promise<void> {
   // break its self-referencing pthread workers — straight from /public it manages
   // its own worker pool correctly
   const factory = (
-    (await import(/* webpackIgnore: true */ "/mujoco.mjs" as string)) as {
+    (await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "/mujoco.mjs" as string)) as {
       default: (opts?: unknown) => Promise<unknown>;
     }
   ).default;

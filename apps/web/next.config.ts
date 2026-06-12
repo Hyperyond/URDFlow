@@ -2,20 +2,10 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   transpilePackages: ["@urdflow/urdf-web"],
-  webpack: (config) => {
-    // mujoco (official WASM bindings) carries Node-only branches (worker_threads,
-    // module, fs…) that never execute in the browser — stub them out of the bundle
-    config.resolve.fallback = {
-      ...config.resolve.fallback,
-      module: false,
-      worker_threads: false,
-      fs: false,
-      path: false,
-      perf_hooks: false,
-      crypto: false,
-    };
-    return config;
-  },
+  // Turbopack (default since Next 16) builds the app. The MuJoCo bindings are never
+  // bundled — they load unbundled from /public/mujoco.mjs in the physics worker
+  // (turbopackIgnore'd), so the old webpack node-stub fallbacks are unnecessary.
+  turbopack: {},
   // MuJoCo WASM is a pthread build: it needs crossOriginIsolated (SharedArrayBuffer).
   // Every asset we load is same-origin, so isolating the whole app is safe.
   async headers() {
