@@ -56,27 +56,27 @@ describe("buildScene presets", () => {
 });
 
 describe("localSceneFromPrompt", () => {
-  it("parses counts and colors from Chinese prompts", () => {
-    const scene = localSceneFromPrompt("生成4个红色方块排成一排", ANCHOR);
+  it("parses counts and colors from English prompts", () => {
+    const scene = localSceneFromPrompt("generate 4 red cubes in a row", ANCHOR);
     expect(scene.cubes).toHaveLength(4);
     expect(scene.cubes[0]!.color).toBe("#f87171");
   });
 
   it("maps scene keywords to the presets", () => {
-    const scene = localSceneFromPrompt("来一个分拣场景", ANCHOR);
+    const scene = localSceneFromPrompt("give me a sorting scene", ANCHOR);
     expect(scene.cubes.length).toBe(3);
     expect(scene.targets.length).toBe(3);
   });
 
   it("digit counts cap at 6", () => {
-    const scene = localSceneFromPrompt("12个方块", ANCHOR);
+    const scene = localSceneFromPrompt("12 cubes", ANCHOR);
     expect(scene.cubes.length).toBeLessThanOrEqual(6);
   });
 });
 
 describe("localSceneFromPrompt noun-bound counts", () => {
   it("binds counts to their nouns (cubes vs targets)", () => {
-    const scene = localSceneFromPrompt("四个黄色方块摆成网格,两个目标", ANCHOR);
+    const scene = localSceneFromPrompt("four yellow cubes in a grid, two targets", ANCHOR);
     expect(scene.cubes).toHaveLength(4);
     expect(scene.targets).toHaveLength(2);
     expect(scene.cubes[0]!.color).toBe("#fbbf24");

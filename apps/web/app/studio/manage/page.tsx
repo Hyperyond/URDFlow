@@ -1,10 +1,10 @@
 import { StageHeader } from "../../../components/StageHeader";
 
 const COMMITS = [
-  { hash: "2283848", msg: "新增 405 条搬运轨迹", gate: "pass", score: 94, n: 405 },
-  { hash: "62b6847", msg: "重标 climb 技能分段", gate: "pass", score: 96, n: 120 },
-  { hash: "9473782", msg: "导入 LAFAN retarget 批次", gate: "fail", score: 71, n: 880 },
-  { hash: "2a01c92", msg: "初始 OMOMO 数据集", gate: "pass", score: 92, n: 1240 },
+  { hash: "2283848", msg: "Add 405 carry trajectories", gate: "pass", score: 94, n: 405 },
+  { hash: "62b6847", msg: "Re-label climb skill segments", gate: "pass", score: 96, n: 120 },
+  { hash: "9473782", msg: "Import LAFAN retarget batch", gate: "fail", score: 71, n: 880 },
+  { hash: "2a01c92", msg: "Initial OMOMO dataset", gate: "pass", score: 92, n: 1240 },
 ];
 
 export default function ManagePage() {
@@ -14,9 +14,9 @@ export default function ManagePage() {
 
       <div className="rise mt-10 grid grid-cols-1 gap-5 lg:grid-cols-3" style={{ animationDelay: "80ms" }}>
         {[
-          { k: "数据集", v: "g1-loco-manip", d: "2 645 episodes · 18.4 GB" },
-          { k: "质量门禁", v: "≥ 90 分", d: "CI 式 · 不合格自动挡回" },
-          { k: "协作者", v: "4 人", d: "读写 / 审核 / 只读" },
+          { k: "Dataset", v: "g1-loco-manip", d: "2,645 episodes · 18.4 GB" },
+          { k: "Quality gate", v: "≥ 90", d: "CI-style · auto-rejects below threshold" },
+          { k: "Collaborators", v: "4", d: "write / review / read-only" },
         ].map((c) => (
           <div key={c.k} className="hud rounded-xl border border-line bg-panel p-5">
             <div className="eyebrow">{c.k}</div>
@@ -29,7 +29,7 @@ export default function ManagePage() {
       {/* commit log with quality gate */}
       <div className="rise mt-5 overflow-hidden rounded-xl border border-line bg-panel" style={{ animationDelay: "140ms" }}>
         <div className="flex items-center justify-between border-b border-line px-5 py-3">
-          <div className="eyebrow">提交历史 · 质量门禁</div>
+          <div className="eyebrow">Commit history · quality gate</div>
           <span className="font-mono text-[11px] text-zinc-500">main</span>
         </div>
         {COMMITS.map((c) => (
@@ -46,11 +46,11 @@ export default function ManagePage() {
             </span>
             {c.gate === "pass" ? (
               <span className="flex items-center gap-1 rounded border border-signal-ok/30 bg-signal-ok/10 px-2 py-0.5 font-mono text-[10px] uppercase text-signal-ok">
-                ✓ 合并
+                ✓ merged
               </span>
             ) : (
               <span className="flex items-center gap-1 rounded border border-signal-bad/30 bg-signal-bad/10 px-2 py-0.5 font-mono text-[10px] uppercase text-signal-bad">
-                ✕ 挡回
+                ✕ blocked
               </span>
             )}
           </div>
@@ -58,7 +58,7 @@ export default function ManagePage() {
       </div>
 
       <p className="rise mt-8 font-mono text-[11px] text-zinc-600" style={{ animationDelay: "200ms" }}>
-        机器人数据集的 GitHub —— 托管、版本、质量门禁。质检不通过的数据进不了 main。
+        GitHub for robot datasets — hosting, versioning, quality gates. Data that fails QC never reaches main.
       </p>
     </div>
   );

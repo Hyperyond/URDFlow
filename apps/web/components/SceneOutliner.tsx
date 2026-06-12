@@ -94,14 +94,14 @@ export function SceneOutliner({
         <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">Scene</span>
         <div className="flex gap-1">
           <button
-            title="添加正方体"
+            title="Add cube"
             onClick={onAddCube}
             className="grid h-5 w-5 place-items-center rounded text-cyan-300/80 hover:bg-white/10 hover:text-cyan-200"
           >
             <Plus size={13} />
           </button>
           <button
-            title="添加目标 (target)"
+            title="Add target"
             onClick={onAddTarget}
             className="grid h-5 w-5 place-items-center rounded text-amber-300/70 hover:bg-white/10 hover:text-amber-300"
           >
@@ -119,13 +119,13 @@ export function SceneOutliner({
             onKeyDown={(e) => {
               if (e.key === "Enter") void submit();
             }}
-            placeholder="描述场景,如:三个红方块分拣"
-            title="用提示词生成场景"
+            placeholder="Describe a scene, e.g. sort three red cubes"
+            title="Generate scene from prompt"
             disabled={busy}
             className="w-full bg-transparent text-[11px] text-zinc-200 placeholder-zinc-600 outline-none"
           />
           <button
-            title="生成场景"
+            title="Generate scene"
             onClick={() => void submit()}
             disabled={busy || !prompt.trim()}
             className="grid h-5 w-5 shrink-0 place-items-center rounded text-cyan-300/80 hover:bg-white/10 disabled:opacity-40"
@@ -139,17 +139,17 @@ export function SceneOutliner({
         {/* multi-chain robots (humanoids): pick which limb the program drives */}
         {chains.length > 1 && (
           <select
-            title="选择活动运动链"
+            title="Select active kinematic chain"
             value={autoHand ? -1 : activeChainIdx}
             onChange={(e) => onPickChain(Number(e.target.value))}
             className="mx-1 mb-1 rounded border border-white/10 bg-black/30 px-1.5 py-1 text-[11px] text-zinc-200 outline-none focus:border-cyan-400/40"
           >
             {chains.filter((c) => c.gripperJoints.length).length > 1 && (
-              <option value={-1}>自动选择最优手</option>
+              <option value={-1}>Auto-pick best arm</option>
             )}
             {chains.map((c, i) => (
               <option key={i} value={i}>
-                {c.name} · {c.joints.length} 关节{c.gripperJoints.length ? " · 带夹爪" : ""}
+                {c.name} · {c.joints.length} joints{c.gripperJoints.length ? " · gripper" : ""}
               </option>
             ))}
           </select>

@@ -92,16 +92,16 @@ export function Timeline({
     <div className="flex h-44 flex-col border-t border-white/10 bg-[#181b22]">
       {/* transport bar */}
       <div className="flex items-center gap-1 border-b border-white/10 px-3 py-1.5">
-        <TBtn title="录制" active={isRecording} onClick={onRecord}>
+        <TBtn title="Record" active={isRecording} onClick={onRecord}>
           <Circle size={15} className={isRecording ? "fill-red-500 text-red-500" : ""} />
         </TBtn>
-        <TBtn title={isPlaying ? "暂停" : "播放"} onClick={isPlaying ? onPause : onPlay}>
+        <TBtn title={isPlaying ? "Pause" : "Play"} onClick={isPlaying ? onPause : onPlay}>
           {isPlaying ? <Pause size={16} /> : <Play size={16} />}
         </TBtn>
-        <TBtn title="停止" onClick={onStop}>
+        <TBtn title="Stop" onClick={onStop}>
           <Square size={15} />
         </TBtn>
-        <TBtn title="循环" active={loop} onClick={onToggleLoop}>
+        <TBtn title="Loop" active={loop} onClick={onToggleLoop}>
           <Repeat size={15} />
         </TBtn>
         <span className="ml-2 font-mono text-[11px] text-zinc-400">
@@ -142,7 +142,7 @@ export function Timeline({
           </>
         ) : (
           <div className="grid h-full place-items-center text-[11px] text-zinc-500">
-            ▶ 播放即自动规划抓取并运行（无需人工生成）
+            ▶ Press play to auto-plan the grasp and run it (no manual authoring)
           </div>
         )}
       </div>

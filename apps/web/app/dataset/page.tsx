@@ -62,7 +62,7 @@ function download(name: string, data: ArrayBuffer | string, mime: string): void 
 
 export default function DatasetPage() {
   const [rows, setRows] = useState<Row[]>([]);
-  const [status, setStatus] = useState("加载机器人模型…");
+  const [status, setStatus] = useState("Loading robot model…");
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [minScore, setMinScore] = useState(0);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -79,7 +79,7 @@ export default function DatasetPage() {
         jointsRef.current = movableJoints(robot);
         setStatus("");
       })
-      .catch((e) => setStatus(`机器人加载失败: ${e.message}`));
+      .catch((e) => setStatus(`Robot load failed: ${e.message}`));
     return () => {
       alive = false;
     };
@@ -99,11 +99,11 @@ export default function DatasetPage() {
         const nWithObject = clip.dim - 14;
         if (nRobotOnly <= movable.length) clip = fitJointCount(clip, nRobotOnly);
         else if (nWithObject > 0 && nWithObject <= movable.length) clip = fitJointCount(clip, nWithObject);
-        else throw new Error(`宽度 ${clip.dim} 与机器人不匹配`);
+        else throw new Error(`width ${clip.dim} doesn't match the robot`);
         const report = analyzeClip(robot, clip, { jointNames: movable });
         newRows.push({ name: f.name, bytes: new Uint8Array(f.buffer), clip, report, selected: report.score >= 90 });
       } catch (e) {
-        console.warn(`分析失败 ${f.name}:`, e);
+        console.warn(`Analysis failed ${f.name}:`, e);
       }
       setProgress({ done: i + 1, total: files.length });
       await new Promise((r) => setTimeout(r, 0)); // let the UI breathe
@@ -121,7 +121,7 @@ export default function DatasetPage() {
       setDragOver(false);
       const files = [...e.dataTransfer.files].filter((f) => f.name.endsWith(".npz"));
       if (files.length === 0) {
-        setStatus("请拖入 .npz 轨迹文件");
+        setStatus("Please drop .npz trajectory files");
         return;
       }
       setStatus("");
@@ -176,27 +176,27 @@ export default function DatasetPage() {
     >
       {dragOver && (
         <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center border-4 border-dashed border-cyan-400/70 bg-cyan-400/10 text-xl font-semibold text-cyan-200">
-          松开以批量质检 .npz 轨迹
+          Drop to batch-QC .npz trajectories
         </div>
       )}
 
       <div className="mx-auto max-w-5xl px-6 py-8">
         <div className="flex items-end justify-between">
           <div>
-            <h1 className="text-xl font-bold">数据集质检台</h1>
+            <h1 className="font-display text-2xl font-bold tracking-tight text-zinc-50">Dataset QC Bench</h1>
             <p className="mt-1 text-sm text-zinc-400">
-              拖入一批 .npz 轨迹 → 批量打分 → 筛掉坏数据 → 导出干净数据集
+              Drop a batch of .npz trajectories → score them → filter out the bad ones → export a clean dataset
             </p>
           </div>
           <div className="flex gap-2 text-sm">
             <button onClick={loadBuiltin} className="rounded bg-white/10 px-3 py-1.5 hover:bg-white/20">
-              载入内置样本
+              Load samples
             </button>
             <a href="/player" className="rounded bg-white/10 px-3 py-1.5 hover:bg-white/20">
-              轨迹播放器
+              Player
             </a>
             <a href="/" className="rounded bg-white/10 px-3 py-1.5 hover:bg-white/20">
-              返回编辑器
+              Editor
             </a>
           </div>
         </div>
@@ -205,7 +205,7 @@ export default function DatasetPage() {
         {progress && (
           <div className="mt-6">
             <div className="mb-1 text-xs text-zinc-400">
-              分析中 {progress.done}/{progress.total}
+              Analyzing {progress.done}/{progress.total}
             </div>
             <div className="h-1.5 w-full overflow-hidden rounded bg-white/10">
               <div
@@ -218,7 +218,7 @@ export default function DatasetPage() {
 
         {rows.length === 0 && !progress && !status && (
           <div className="mt-16 rounded-xl border border-dashed border-white/15 py-20 text-center text-zinc-500">
-            将 .npz 轨迹文件拖到此处(可多选),或点「载入内置样本」试用
+            Drop .npz trajectory files here (multi-select), or click “Load samples” to try it
           </div>
         )}
 
@@ -226,10 +226,10 @@ export default function DatasetPage() {
           <>
             <div className="mt-6 flex flex-wrap items-center gap-4 text-sm">
               <span className="text-zinc-400">
-                共 {rows.length} 条 · 选中 {selectedRows.length} 条
+                {rows.length} clips · {selectedRows.length} selected
               </span>
               <label className="flex items-center gap-2 text-zinc-400">
-                分数 ≥ <span className="tabular-nums text-zinc-200">{minScore}</span>
+                score ≥ <span className="tabular-nums text-zinc-200">{minScore}</span>
                 <input
                   type="range"
                   min={0}
@@ -244,14 +244,14 @@ export default function DatasetPage() {
                   onClick={exportReport}
                   className="rounded bg-white/10 px-3 py-1.5 hover:bg-white/20"
                 >
-                  导出报告 JSON
+                  Export report JSON
                 </button>
                 <button
                   onClick={exportZip}
                   disabled={selectedRows.length === 0}
                   className="rounded bg-emerald-600/90 px-3 py-1.5 font-semibold text-white hover:bg-emerald-500 disabled:opacity-40"
                 >
-                  导出选中 ({selectedRows.length}) 为 zip
+                  Export selected ({selectedRows.length}) as zip
                 </button>
               </div>
             </div>
@@ -271,14 +271,14 @@ export default function DatasetPage() {
                         }
                       />
                     </th>
-                    <th className="px-3 py-2">文件</th>
-                    <th className="px-3 py-2 text-right">时长</th>
-                    <th className="px-3 py-2 text-right">分数</th>
-                    <th className="px-3 py-2 text-right">滑脚</th>
-                    <th className="px-3 py-2 text-right">穿地</th>
-                    <th className="px-3 py-2 text-right">超限</th>
-                    <th className="px-3 py-2 text-right">跳变</th>
-                    <th className="px-3 py-2 text-right">问题</th>
+                    <th className="px-3 py-2">File</th>
+                    <th className="px-3 py-2 text-right">Length</th>
+                    <th className="px-3 py-2 text-right">Score</th>
+                    <th className="px-3 py-2 text-right">Skate</th>
+                    <th className="px-3 py-2 text-right">Penet.</th>
+                    <th className="px-3 py-2 text-right">Limit</th>
+                    <th className="px-3 py-2 text-right">Telep.</th>
+                    <th className="px-3 py-2 text-right">Issues</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -300,8 +300,8 @@ export default function DatasetPage() {
               </table>
             </div>
             <p className="mt-3 text-xs text-zinc-500">
-              机器人:Unitree G1(球形手)· 指标:触地滑移 / 地面穿透 / 关节限位 / 基座跳变 ·
-              默认勾选 ≥90 分
+              Robot: Unitree G1 (sphere hand) · metrics: foot skate / ground penetration / joint limits /
+              base teleports · clips ≥ 90 selected by default
             </p>
           </>
         )}

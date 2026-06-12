@@ -93,7 +93,7 @@ export default function Page() {
           {r.loading && <LoadingOverlay progress={r.progress} />}
           {r.error && (
             <div className="absolute left-3 top-3 rounded border border-red-500/30 bg-red-500/10 px-2 py-1 text-xs text-red-300">
-              加载失败: {r.error.message}
+              Load failed: {r.error.message}
             </div>
           )}
           {ed.error && (

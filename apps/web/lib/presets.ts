@@ -63,7 +63,7 @@ export const PRESETS: RobotPreset[] = [
   },
   {
     id: "g1",
-    name: "Unitree G1 (人形+夹爪)",
+    name: "Unitree G1 (humanoid + gripper)",
     url: "/robots/g1/g1.urdf",
     // both arms in a table-work pose — auto hand selection may pick either one
     readyPose: {
@@ -77,7 +77,7 @@ export const PRESETS: RobotPreset[] = [
   },
   {
     id: "h1",
-    name: "Unitree H1 (人形)",
+    name: "Unitree H1 (humanoid)",
     url: "/robots/h1/h1.urdf",
     readyPose: {
       left_shoulder_pitch_joint: -0.3,

@@ -35,7 +35,7 @@ const TIMESTEP = 0.004; // matches g1_mjx.xml
 export default function WalkLab() {
   const mountRef = useRef<HTMLDivElement>(null);
   const workerRef = useRef<Worker | null>(null);
-  const [status, setStatus] = useState("启动中…");
+  const [status, setStatus] = useState("Booting…");
   const [stats, setStats] = useState("");
   const [cmd, setCmd] = useState<[number, number, number]>([0, 0, 0]);
 
@@ -75,13 +75,13 @@ export default function WalkLab() {
       scene.add(ground);
       scene.add(new GridHelper(20, 40, 0xaab0ba, 0xc8ccd2));
 
-      setStatus("加载 URDF 渲染模型…");
+      setStatus("Loading URDF render model…");
       const robot: URDFRobot = await loadURDFFromURL("/robots/g1/g1.urdf");
       if (!alive) return;
       scene.add(robot);
 
       // ---- fetch the MJCF on the main thread, hand it to the worker ----
-      setStatus("加载 G1 物理模型…");
+      setStatus("Loading G1 physics model…");
       const [sceneXml, g1XmlRaw] = await Promise.all([
         fetch(`${MJCF_DIR}/scene_mjx.xml`).then((r) => r.text()),
         fetch(`${MJCF_DIR}/g1_mjx.xml`).then((r) => r.text()),
@@ -103,7 +103,7 @@ export default function WalkLab() {
       const jointOrder = [...g1Xml.matchAll(/<joint name="([^"]+)"/g)].map((m) => m[1]!);
       if (!alive) return;
 
-      setStatus("编译模型(Worker 内 MuJoCo)…");
+      setStatus("Compiling model (MuJoCo in worker)…");
       const sab = new SharedArrayBuffer(8 * (1 + 7 + jointOrder.length));
       const state = new Float64Array(sab);
       worker = new Worker(new URL("./physics.worker.ts", import.meta.url));
@@ -153,7 +153,7 @@ export default function WalkLab() {
         frames++;
         if (now - statT > 500) {
           setStats(
-            `渲染 ${Math.round((frames * 1000) / (now - statT))} fps · 物理 ${TIMESTEP * 1000}ms/步 · t=${state[0]!.toFixed(1)}s · 骨盆高 ${state[3]!.toFixed(2)}m · 位置 (${state[1]!.toFixed(2)}, ${state[2]!.toFixed(2)})`,
+            `render ${Math.round((frames * 1000) / (now - statT))} fps · physics ${TIMESTEP * 1000}ms/step · t=${state[0]!.toFixed(1)}s · pelvis ${state[3]!.toFixed(2)}m · pos (${state[1]!.toFixed(2)}, ${state[2]!.toFixed(2)})`,
           );
           frames = 0;
           statT = now;
@@ -163,7 +163,7 @@ export default function WalkLab() {
       raf = requestAnimationFrame(tick);
     })().catch((e) => {
       console.error(e);
-      setStatus(`启动失败: ${e instanceof Error ? e.message : String(e)}`);
+      setStatus(`Boot failed: ${e instanceof Error ? e.message : String(e)}`);
     });
 
     // WASD / arrows steer the velocity command, space stops
@@ -200,39 +200,39 @@ export default function WalkLab() {
       <div ref={mountRef} className="h-full w-full" />
       <div className="absolute left-3 top-3 flex flex-col gap-2 text-xs">
         <div className="rounded border border-white/10 bg-black/60 px-3 py-2 text-zinc-200">
-          <div className="font-semibold">物理实验台 · Unitree G1 行走(MuJoCo WASM + LSTM 策略)</div>
+          <div className="font-semibold">Physics Lab · Unitree G1 walking (MuJoCo WASM + LSTM policy)</div>
           <div className="mt-1 text-zinc-400">
-            {status || `命令 vx=${cmd[0].toFixed(1)} vy=${cmd[1].toFixed(1)} ω=${cmd[2].toFixed(1)} · WASD/方向键转向,空格停`}
+            {status || `cmd vx=${cmd[0].toFixed(1)} vy=${cmd[1].toFixed(1)} ω=${cmd[2].toFixed(1)} · WASD / arrows to steer, space to stop`}
             {stats && <div>{stats}</div>}
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
           <button onClick={() => sendCmd(0.5, 0, 0)} className="rounded bg-emerald-600/80 px-3 py-1.5 text-white hover:bg-emerald-500">
-            前进
+            Forward
           </button>
           <button onClick={() => sendCmd(0, 0, 0)} className="rounded bg-zinc-600/80 px-3 py-1.5 text-white hover:bg-zinc-500">
-            停止
+            Stop
           </button>
           <button onClick={() => sendCmd(0.3, 0, 0.5)} className="rounded bg-sky-600/80 px-3 py-1.5 text-white hover:bg-sky-500">
-            左转
+            Turn left
           </button>
           <button onClick={() => sendCmd(0.3, 0, -0.5)} className="rounded bg-sky-600/80 px-3 py-1.5 text-white hover:bg-sky-500">
-            右转
+            Turn right
           </button>
           <button
             onClick={() => workerRef.current?.postMessage({ type: "reset" })}
             className="rounded bg-cyan-600/80 px-3 py-1.5 text-white hover:bg-cyan-500"
           >
-            重置
+            Reset
           </button>
           <button
             onClick={() => workerRef.current?.postMessage({ type: "push", vx: 0.7, vy: 0.3 })}
             className="rounded bg-amber-600/80 px-3 py-1.5 text-white hover:bg-amber-500"
           >
-            推一下
+            Push
           </button>
           <a href="/" className="rounded bg-white/10 px-3 py-1.5 text-zinc-200 hover:bg-white/20">
-            返回编辑器
+            Editor
           </a>
         </div>
       </div>

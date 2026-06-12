@@ -87,13 +87,13 @@ interface Sample {
 const SAMPLES: Sample[] = [
   {
     id: "climb_00",
-    name: "G1 爬越地形",
+    name: "G1 terrain climb",
     npz: "/datasets/omniretarget/climb_00.npz",
     scenes: [{ urdf: "/datasets/omniretarget/climb_00/terrain.urdf", attach: "world" }],
   },
   {
     id: "chair_carry",
-    name: "G1 搬运椅子",
+    name: "G1 chair carry",
     npz: "/datasets/omniretarget/chair_carry.npz",
     scenes: [
       { urdf: "/datasets/omniretarget/chair_scaled_1.2.urdf", attach: "object" },
@@ -120,7 +120,7 @@ function movableJoints(robot: URDFRobot): string[] {
 
 export default function PlayerPage() {
   const mountRef = useRef<HTMLDivElement>(null);
-  const [status, setStatus] = useState("加载中…");
+  const [status, setStatus] = useState("Loading…");
   const [sampleId, setSampleId] = useState(SAMPLES[0]!.id);
   const [playing, setPlaying] = useState(true);
   const [speed, setSpeed] = useState(1);
@@ -156,14 +156,14 @@ export default function PlayerPage() {
     let fitted: MotionClip;
     if (nRobotOnly <= movable.length) fitted = fitJointCount(clip, nRobotOnly);
     else if (nWithObject > 0 && nWithObject <= movable.length) fitted = fitJointCount(clip, nWithObject);
-    else throw new Error(`轨迹宽度 ${clip.dim} 与机器人 ${movable.length} 个关节不匹配`);
+    else throw new Error(`Trajectory width ${clip.dim} doesn't match the robot's ${movable.length} joints`);
 
     clipRef.current = fitted;
     timeRef.current = 0;
     setDuration(fitted.duration);
     setTime(0);
     setReport(null);
-    setClipName(`${name} · ${fitted.frames} 帧 · ${fitted.fps}fps · ${fitted.duration.toFixed(1)}s${fitted.hasObject ? " · 含物体" : ""}`);
+    setClipName(`${name} · ${fitted.frames} frames · ${fitted.fps}fps · ${fitted.duration.toFixed(1)}s${fitted.hasObject ? " · +object" : ""}`);
     setStatus("");
   }, []);
 
@@ -186,7 +186,7 @@ export default function PlayerPage() {
   const loadSample = useCallback(
     async (sample: Sample) => {
       const seq = ++loadSeqRef.current;
-      setStatus(`加载 ${sample.name}…`);
+      setStatus(`Loading ${sample.name}…`);
       const npzBuf = await fetch(sample.npz).then((r) => r.arrayBuffer());
       const clip = motionFromNpz(await parseNpz(npzBuf));
       const assets = await Promise.all((sample.scenes ?? []).map((s) => loadSceneURDF(s.urdf)));
@@ -237,7 +237,7 @@ export default function PlayerPage() {
       scene.add(ground);
       scene.add(new GridHelper(40, 80, 0x39424f, 0x262d37));
 
-      setStatus("加载机器人模型…");
+      setStatus("Loading robot model…");
       const robot = await loadURDFFromURL(ROBOT_URDF);
       if (!alive) return;
       robotRef.current = robot;
@@ -298,7 +298,7 @@ export default function PlayerPage() {
       raf = requestAnimationFrame(tick);
     })().catch((e) => {
       console.error(e);
-      setStatus(`加载失败: ${e instanceof Error ? e.message : String(e)}`);
+      setStatus(`Load failed: ${e instanceof Error ? e.message : String(e)}`);
     });
 
     const onResize = () => {
@@ -326,17 +326,17 @@ export default function PlayerPage() {
       setDragOver(false);
       const file = e.dataTransfer.files[0];
       if (!file || !file.name.endsWith(".npz")) {
-        setStatus("请拖入 .npz 轨迹文件");
+        setStatus("Please drop a .npz trajectory file");
         return;
       }
       try {
-        setStatus(`解析 ${file.name}…`);
+        setStatus(`Parsing ${file.name}…`);
         loadSeqRef.current++; // supersede any in-flight sample load
         clearSceneAssets(); // dropped clips have no bundled scene asset
         const clip = motionFromNpz(await parseNpz(await file.arrayBuffer()));
         installClip(clip, file.name);
       } catch (err) {
-        setStatus(`解析失败: ${err instanceof Error ? err.message : String(err)}`);
+        setStatus(`Parse failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     },
     [installClip, clearSceneAssets],
@@ -358,19 +358,19 @@ export default function PlayerPage() {
 
       {dragOver && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center border-4 border-dashed border-cyan-400/70 bg-cyan-400/10 text-xl font-semibold text-cyan-200">
-          松开以加载 .npz 轨迹
+          Drop to load a .npz trajectory
         </div>
       )}
 
       {/* top bar */}
       <div className="absolute left-3 top-3 flex flex-col gap-2 text-xs">
         <div className="rounded border border-white/10 bg-black/60 px-3 py-2 text-zinc-200">
-          <div className="font-semibold">轨迹播放器 · URDFlow 数据工作台</div>
+          <div className="font-semibold">Trajectory Player · URDFlow</div>
           <div className="mt-1 text-zinc-400">
-            {status || clipName || "拖入 .npz 文件,或选择内置样本"}
+            {status || clipName || "Drop a .npz file, or pick a bundled sample"}
           </div>
           <div className="mt-0.5 text-[10px] text-zinc-500">
-            内置样本来自 OmniRetarget Dataset(MIT)· 拖入任意同格式 .npz 即可回放
+            Samples from the OmniRetarget Dataset (MIT) · drop any .npz in the same layout to replay
           </div>
         </div>
         <div className="flex gap-2">
@@ -379,7 +379,7 @@ export default function PlayerPage() {
               key={s.id}
               onClick={() => {
                 setSampleId(s.id);
-                loadSample(s).catch((e) => setStatus(`加载失败: ${e.message}`));
+                loadSample(s).catch((e) => setStatus(`Load failed: ${e.message}`));
               }}
               className={`rounded px-3 py-1.5 ${
                 sampleId === s.id ? "bg-cyan-600/90 text-white" : "bg-white/10 text-zinc-200 hover:bg-white/20"
@@ -392,13 +392,13 @@ export default function PlayerPage() {
             onClick={runQC}
             className="rounded bg-emerald-600/90 px-3 py-1.5 font-semibold text-white hover:bg-emerald-500"
           >
-            运行质检
+            Run QC
           </button>
           <a href="/dataset" className="rounded bg-white/10 px-3 py-1.5 text-zinc-200 hover:bg-white/20">
-            数据集质检
+            Dataset QC
           </a>
           <a href="/" className="rounded bg-white/10 px-3 py-1.5 text-zinc-200 hover:bg-white/20">
-            返回编辑器
+            Editor
           </a>
         </div>
       </div>
@@ -407,7 +407,7 @@ export default function PlayerPage() {
       {qcOpen && report && (
         <div className="absolute right-3 top-3 flex max-h-[calc(100vh-120px)] w-80 flex-col rounded-xl border border-white/10 bg-black/75 text-sm text-zinc-200 backdrop-blur">
           <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-            <span className="font-semibold">质检报告</span>
+            <span className="font-semibold">QC Report</span>
             <button onClick={() => setQcOpen(false)} className="text-zinc-400 hover:text-white">
               ✕
             </button>
@@ -421,29 +421,29 @@ export default function PlayerPage() {
               {report.score}
             </div>
             <div className="text-xs text-zinc-400">
-              <div>{report.frames} 帧 · {report.duration.toFixed(1)}s</div>
-              <div>{report.issues.length === 0 ? "未检出问题" : `${report.issues.length} 个问题`}</div>
+              <div>{report.frames} frames · {report.duration.toFixed(1)}s</div>
+              <div>{report.issues.length === 0 ? "no issues found" : `${report.issues.length} issues`}</div>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-2 px-4 pb-3 text-xs">
             <div className="rounded bg-white/5 px-2 py-1.5">
-              <div className="text-zinc-500">滑脚累计</div>
+              <div className="text-zinc-500">Foot skate</div>
               <div className="tabular-nums">{(report.metrics.footSkateDistance * 100).toFixed(1)} cm</div>
             </div>
             <div className="rounded bg-white/5 px-2 py-1.5">
-              <div className="text-zinc-500">最深穿地</div>
+              <div className="text-zinc-500">Max penetration</div>
               <div className="tabular-nums">{(report.metrics.maxPenetration * 100).toFixed(1)} cm</div>
             </div>
             <div className="rounded bg-white/5 px-2 py-1.5">
-              <div className="text-zinc-500">超限帧数</div>
+              <div className="text-zinc-500">Limit frames</div>
               <div className="tabular-nums">{report.metrics.limitViolationFrames}</div>
             </div>
             <div className="rounded bg-white/5 px-2 py-1.5">
-              <div className="text-zinc-500">基座跳变</div>
+              <div className="text-zinc-500">Teleports</div>
               <div className="tabular-nums">{report.metrics.teleportCount}</div>
             </div>
             <div className="col-span-2 rounded bg-white/5 px-2 py-1.5">
-              <div className="text-zinc-500">峰值抖动 (jerk)</div>
+              <div className="text-zinc-500">Peak jerk</div>
               <div className="tabular-nums">
                 {report.metrics.peakJerk.toFixed(0)} rad/s³
                 {report.metrics.peakJerkJoint ? ` · ${report.metrics.peakJerkJoint}` : ""}
@@ -480,7 +480,7 @@ export default function PlayerPage() {
         <button
           onClick={() => setPlaying((p) => !p)}
           className="flex h-9 w-9 items-center justify-center rounded-full bg-cyan-600 text-white hover:bg-cyan-500"
-          aria-label={playing ? "暂停" : "播放"}
+          aria-label={playing ? "Pause" : "Play"}
         >
           {playing ? "⏸" : "▶"}
         </button>

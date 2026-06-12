@@ -8,10 +8,10 @@ export function StageHeader({ id }: { id: string }) {
     <div className="rise">
       <div className="flex items-center gap-3">
         <span className="font-mono text-sm tabular-nums text-accent/70">{s.index}</span>
-        <span className="eyebrow">{s.en}</span>
+        <span className="eyebrow">{s.name}</span>
         {s.status === "wip" && (
           <span className="rounded-full border border-line-strong px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider text-zinc-500">
-            前端预览 · 后端规划中
+            frontend preview · backend planned
           </span>
         )}
       </div>

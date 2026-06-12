@@ -11,11 +11,11 @@ const SCENE_SCHEMA = {
       items: {
         type: "object",
         properties: {
-          x: { type: "number", description: "米,机器人基座为原点" },
-          z: { type: "number", description: "米,机器人基座为原点" },
+          x: { type: "number", description: "meters, origin at the robot base" },
+          z: { type: "number", description: "meters, origin at the robot base" },
           color: {
             type: "string",
-            description: "可选,CSS 十六进制颜色,如 #f87171",
+            description: "optional CSS hex color, e.g. #f87171",
           },
         },
         required: ["x", "z"],
@@ -71,11 +71,11 @@ export async function POST(req: Request) {
         format: { type: "json_schema", schema: SCENE_SCHEMA },
       },
       system: [
-        "你是机械臂仿真场景的布局设计师。输出俯视图坐标(单位米),机器人基座在原点 (0,0)。",
-        `可达范围:到原点距离必须在 0.14 到 ${radius.toFixed(2)} 之间;舒适工作点在 (${ax.toFixed(2)}, ${az.toFixed(2)}) 附近。`,
-        "方块边长 0.05,任意两个物体(方块或目标)中心距至少 0.09。",
-        "cubes 是要抓取的方块(最多 6 个,可带颜色),targets 是放置点(最多 6 个);抓取程序按顺序把第 i 个方块放到第 i%targets.length 个目标。",
-        "按用户描述安排数量、颜色与布局(直线/网格/扇形等),让布局贴合描述的工业场景语义。",
+        "You design layouts for a robot-arm simulation scene. Output top-view coordinates (in meters) with the robot base at the origin (0,0).",
+        `Reachability: distance to the origin must be between 0.14 and ${radius.toFixed(2)}; the comfortable work point is near (${ax.toFixed(2)}, ${az.toFixed(2)}).`,
+        "Cubes are 0.05 m on a side; keep at least 0.09 m between the centers of any two objects (cube or target).",
+        "`cubes` are the blocks to pick (up to 6, optional color); `targets` are drop-off points (up to 6). The grasp program places cube i at target i % targets.length, in order.",
+        "Follow the user's description for count, color, and layout (row / grid / fan, etc.) so the arrangement matches the described industrial scene.",
       ].join("\n"),
       messages: [{ role: "user", content: prompt }],
     });

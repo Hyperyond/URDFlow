@@ -16,8 +16,9 @@ const mono = JetBrains_Mono({
 });
 
 export const metadata = {
-  title: "URDFlow · 机器人数据工作台",
-  description: "浏览器里的机器人学习数据工作台:采集 · 标注 · 质检 · 管理 · 训练。零安装,链接即分享。",
+  title: "URDFlow · Robot Data Workbench",
+  description:
+    "Browser-native workbench for robot-learning data: collect, annotate, QC, manage, train. Zero install, share a link.",
 };
 
 export default function RootLayout({

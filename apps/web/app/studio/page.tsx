@@ -10,37 +10,38 @@ export default function StudioHome() {
       <div className="rise flex items-center justify-between" style={{ animationDelay: "0ms" }}>
         <div className="flex items-center gap-3">
           <span className="pulse h-2 w-2 rounded-full bg-signal-ok" />
-          <span className="eyebrow">Mission Control · 机器人数据流水线</span>
+          <span className="eyebrow">Mission Control · Robot Data Pipeline</span>
         </div>
         <div className="font-mono text-[11px] text-zinc-500">
-          v0.3 · {STAGES.filter((s) => s.status === "live").length}/{STAGES.length} 阶段在线
+          v0.3 · {STAGES.filter((s) => s.status === "live").length}/{STAGES.length} stages online
         </div>
       </div>
 
       {/* ---- hero ---- */}
       <div className="rise mt-10 max-w-3xl" style={{ animationDelay: "60ms" }}>
         <h1 className="font-display text-[3.25rem] font-bold leading-[1.05] tracking-tight text-zinc-50">
-          一个工作台,
+          One workbench,
           <br />
-          从<span className="text-accent">采集</span>到<span className="text-accent">训练</span>。
+          from <span className="text-accent">collection</span> to <span className="text-accent">training</span>.
         </h1>
         <p className="mt-6 text-lg leading-relaxed text-zinc-400">
-          机器人学习数据的全流程驾驶舱。浏览器里跑,零安装,链接即分享 ——
-          其中<span className="text-zinc-200">质检</span>是别人没有的杀手锏:懂机器人语义,自动判定数据能不能拿去训练。
+          The full-pipeline cockpit for robot-learning data. Runs in the browser, zero install, share a link —
+          and <span className="text-zinc-200">quality control</span> is the edge nobody else has: robot-aware,
+          it decides whether your data is fit to train on.
         </p>
         <div className="mt-8 flex gap-3">
           <Link
             href="/dataset"
             className="group flex items-center gap-2 rounded-lg bg-accent px-5 py-2.5 font-medium text-[#06181c] transition-transform hover:scale-[1.02]"
           >
-            运行质检
+            Run QC
             <span className="transition-transform group-hover:translate-x-0.5">→</span>
           </Link>
           <Link
             href="/player"
             className="rounded-lg border border-line-strong px-5 py-2.5 font-medium text-zinc-200 transition-colors hover:bg-white/5"
           >
-            轨迹播放器
+            Trajectory Player
           </Link>
         </div>
       </div>
@@ -48,7 +49,7 @@ export default function StudioHome() {
       {/* ---- pipeline flow ---- */}
       <div className="rise mt-16" style={{ animationDelay: "120ms" }}>
         <div className="mb-5 flex items-center gap-4">
-          <span className="eyebrow">流水线</span>
+          <span className="eyebrow">Pipeline</span>
           <span className="h-px flex-1 bg-line" />
         </div>
 
@@ -67,18 +68,17 @@ export default function StudioHome() {
                 {s.status === "live" ? (
                   <span className="flex items-center gap-1.5 rounded-full border border-signal-ok/30 bg-signal-ok/10 px-2 py-0.5">
                     <span className="h-1.5 w-1.5 rounded-full bg-signal-ok" />
-                    <span className="font-mono text-[9px] uppercase tracking-wider text-signal-ok">已上线</span>
+                    <span className="font-mono text-[9px] uppercase tracking-wider text-signal-ok">live</span>
                   </span>
                 ) : (
                   <span className="rounded-full border border-line-strong px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider text-zinc-500">
-                    规划中
+                    planned
                   </span>
                 )}
               </div>
 
-              <div className="mt-4 flex items-baseline gap-2">
+              <div className="mt-4">
                 <h3 className="font-display text-xl font-semibold text-zinc-100">{s.name}</h3>
-                <span className="font-mono text-[11px] uppercase tracking-wider text-zinc-600">{s.en}</span>
               </div>
               <p className="mt-2 text-sm leading-relaxed text-zinc-400">{s.blurb}</p>
 
@@ -90,7 +90,7 @@ export default function StudioHome() {
               </div>
 
               <span className="mt-4 inline-flex items-center gap-1 font-mono text-[11px] uppercase tracking-wider text-zinc-500 transition-colors group-hover:text-accent">
-                进入 <span className="transition-transform group-hover:translate-x-0.5">→</span>
+                Open <span className="transition-transform group-hover:translate-x-0.5">→</span>
               </span>
             </Link>
           ))}
@@ -103,9 +103,9 @@ export default function StudioHome() {
         style={{ animationDelay: "320ms" }}
       >
         {[
-          { k: "他们 → 我们", v: "管理后台 → 开源驾驶舱", d: "重、要私有化部署 → 浏览器零安装" },
-          { k: "差异化", v: "看见数据 → 判定数据", d: "面板看 1 条 → 引擎筛 1 万条" },
-          { k: "护城河", v: "机器人语义质检", d: "懂 URDF + 物理回放,别人抄起来贵" },
+          { k: "Them → Us", v: "Admin console → open cockpit", d: "Heavy, on-prem → browser, zero install" },
+          { k: "Difference", v: "See data → judge data", d: "A panel shows one clip → the engine filters ten thousand" },
+          { k: "Moat", v: "Robot-aware QC", d: "Understands URDF + physics replay — expensive to copy" },
         ].map((c) => (
           <div key={c.k} className="bg-panel p-6">
             <div className="eyebrow">{c.k}</div>
@@ -116,7 +116,7 @@ export default function StudioHome() {
       </div>
 
       <div className="mt-8 text-center font-mono text-[11px] text-zinc-600">
-        URDFlow · 开源机器人数据工作台 · 不做日志可视化 / 感知标注 / 自产数据
+        URDFlow · open-source robot-data workbench · not log viz / perception labeling / data resale
       </div>
     </div>
   );

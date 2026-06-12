@@ -8,11 +8,11 @@ export default function TrainPage() {
       <div className="rise mt-10 grid grid-cols-1 gap-5 lg:grid-cols-2" style={{ animationDelay: "80ms" }}>
         {/* export targets */}
         <div className="hud rounded-xl border border-line bg-panel p-6">
-          <div className="eyebrow">导出 · 对接训练框架</div>
+          <div className="eyebrow">Export · training frameworks</div>
           <div className="mt-4 space-y-3">
             {[
-              { t: "LeRobot v3", d: "parquet + 视频分片", on: true },
-              { t: "holosoma", d: "whole-body tracking 配置", on: true },
+              { t: "LeRobot v3", d: "parquet + video shards", on: true },
+              { t: "holosoma", d: "whole-body tracking config", on: true },
               { t: "Isaac Lab", d: "USD / motion reference", on: false },
             ].map((x) => (
               <div key={x.t} className="flex items-center justify-between rounded-lg border border-line bg-raised px-4 py-3">
@@ -23,7 +23,7 @@ export default function TrainPage() {
                 <span
                   className={`font-mono text-[10px] uppercase tracking-wider ${x.on ? "text-signal-ok" : "text-zinc-600"}`}
                 >
-                  {x.on ? "已接入" : "规划中"}
+                  {x.on ? "ready" : "planned"}
                 </span>
               </div>
             ))}
@@ -33,7 +33,7 @@ export default function TrainPage() {
         {/* run monitor mock */}
         <div className="hud rounded-xl border border-line bg-panel p-6">
           <div className="flex items-center justify-between">
-            <div className="eyebrow">训练监控</div>
+            <div className="eyebrow">Training monitor</div>
             <span className="flex items-center gap-1.5">
               <span className="pulse h-1.5 w-1.5 rounded-full bg-signal-ok" />
               <span className="font-mono text-[10px] uppercase text-signal-ok">running</span>
@@ -63,7 +63,7 @@ export default function TrainPage() {
           <div className="mt-3 grid grid-cols-3 gap-3 font-mono text-xs">
             <div>
               <div className="text-zinc-500">step</div>
-              <div className="tabular-nums text-zinc-200">48 000</div>
+              <div className="tabular-nums text-zinc-200">48,000</div>
             </div>
             <div>
               <div className="text-zinc-500">reward</div>
@@ -75,13 +75,14 @@ export default function TrainPage() {
             </div>
           </div>
           <button className="mt-5 w-full rounded-lg border border-accent/40 bg-accent/10 py-2.5 font-medium text-accent transition-colors hover:bg-accent/20">
-            在浏览器里看这个 checkpoint 跑
+            Watch this checkpoint run in the browser
           </button>
         </div>
       </div>
 
       <p className="rise mt-8 font-mono text-[11px] text-zinc-600" style={{ animationDelay: "160ms" }}>
-        不重造训练框架(holosoma / Isaac Lab 已开源)—— 做它们最好用的前端:一键导出、起训、浏览器验证策略。
+        We don&apos;t rebuild the trainer (holosoma / Isaac Lab are open source) — we&apos;re the best frontend for
+        them: one-click export, launch, and browser policy verification.
       </p>
     </div>
   );

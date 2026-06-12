@@ -14,8 +14,8 @@ export default function AnnotatePage() {
 
       <div className="rise mt-10 rounded-xl border border-line bg-panel p-6" style={{ animationDelay: "80ms" }}>
         <div className="flex items-center justify-between">
-          <div className="eyebrow">技能分段 · climb_00.npz</div>
-          <span className="font-mono text-xs text-zinc-500">20.1s · 604 帧</span>
+          <div className="eyebrow">Skill segmentation · climb_00.npz</div>
+          <span className="font-mono text-xs text-zinc-500">20.1s · 604 frames</span>
         </div>
 
         {/* skill timeline */}
@@ -50,22 +50,23 @@ export default function AnnotatePage() {
         {/* task language */}
         <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
           <div>
-            <div className="eyebrow">任务语言</div>
+            <div className="eyebrow">Task language</div>
             <div className="mt-2 rounded-lg border border-line bg-raised p-4 text-sm leading-relaxed text-zinc-300">
-              “爬上前方的箱子,保持双手支撑直到身体完全上去。”
+              “Climb onto the box ahead, keeping both hands planted until the body is fully up.”
             </div>
           </div>
           <div>
-            <div className="eyebrow">3D 同屏对齐</div>
+            <div className="eyebrow">Aligned to 3D</div>
             <div className="mt-2 grid h-[88px] place-items-center rounded-lg border border-line bg-raised">
-              <span className="font-mono text-xs text-zinc-600">标注挂在 3D 轨迹上,非视频拉条</span>
+              <span className="font-mono text-xs text-zinc-600">Labels ride the 3D trajectory, not a video scrubber</span>
             </div>
           </div>
         </div>
       </div>
 
       <p className="rise mt-8 font-mono text-[11px] text-zinc-600" style={{ animationDelay: "160ms" }}>
-        不做通用图像 / 点云标注(Encord 的地盘)—— 只做轨迹语义:技能分段、任务描述、关键帧。
+        Not general image / point-cloud labeling (Encord&apos;s turf) — just trajectory semantics: skill
+        segmentation, task descriptions, keyframes.
       </p>
     </div>
   );

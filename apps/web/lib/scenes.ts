@@ -3,9 +3,9 @@ import { clampScene, type SceneSpec } from "./sceneTypes";
 export type SceneKind = "assembly" | "sorting" | "logistics";
 
 export const SCENE_PRESETS: { kind: SceneKind; name: string }[] = [
-  { kind: "assembly", name: "流水线" },
-  { kind: "sorting", name: "分拣" },
-  { kind: "logistics", name: "物流" },
+  { kind: "assembly", name: "Assembly line" },
+  { kind: "sorting", name: "Sorting" },
+  { kind: "logistics", name: "Logistics" },
 ];
 
 const rot = (x: number, z: number, a: number): [number, number] => [

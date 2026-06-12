@@ -62,13 +62,13 @@ export function MenuBar({ robotLabel, presets, uploaded, onPickPreset, onPickFil
         href="/studio"
         className="rounded border border-accent/40 bg-accent/10 px-2 py-1 font-medium text-accent hover:bg-accent/20"
       >
-        工作台 ↗
+        Workbench ↗
       </a>
       <a href="/player" className="rounded px-2 py-1 text-zinc-300 hover:bg-white/10">
-        轨迹播放器
+        Player
       </a>
       <a href="/dataset" className="mr-1 rounded px-2 py-1 text-zinc-300 hover:bg-white/10">
-        数据集质检
+        Dataset QC
       </a>
 
       {/* Import lives here as the "easter egg" under File */}
@@ -80,7 +80,7 @@ export function MenuBar({ robotLabel, presets, uploaded, onPickPreset, onPickFil
           }}
           className="block w-full px-3 py-1.5 text-left text-zinc-300 hover:bg-white/10"
         >
-          导入机器人文件夹…
+          Import robot folder…
         </button>
         <button
           onClick={() => {
@@ -89,7 +89,7 @@ export function MenuBar({ robotLabel, presets, uploaded, onPickPreset, onPickFil
           }}
           className="block w-full px-3 py-1.5 text-left text-zinc-300 hover:bg-white/10"
         >
-          导入 .zip…
+          Import .zip…
         </button>
       </MenuButton>
 

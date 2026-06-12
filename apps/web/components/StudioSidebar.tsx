@@ -71,9 +71,9 @@ export function StudioSidebar() {
           href="/"
           className="font-mono text-[11px] uppercase tracking-wider text-zinc-500 transition-colors hover:text-zinc-300"
         >
-          ← 3D 编辑器
+          ← 3D Editor
         </Link>
-        <div className="mt-2 font-mono text-[10px] text-zinc-600">开源 · 零安装 · 浏览器原生</div>
+        <div className="mt-2 font-mono text-[10px] text-zinc-600">open source · zero install · browser native</div>
       </div>
     </aside>
   );

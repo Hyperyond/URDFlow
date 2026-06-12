@@ -37,7 +37,7 @@ export function ImportPanel({ onPickFiles, onPickZip, busy }: ImportPanelProps) 
             : "border-white/10 text-zinc-500 hover:border-white/20"
         }`}
       >
-        {busy ? "Loading…" : "拖入机器人文件夹 / .zip，或点击选择"}
+        {busy ? "Loading…" : "Drop a robot folder / .zip, or click to choose"}
       </div>
       <input
         ref={folderRef}

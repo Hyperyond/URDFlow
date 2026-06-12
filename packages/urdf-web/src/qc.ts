@@ -254,7 +254,7 @@ export function analyzeClip(robot: URDFRobot, clip: MotionClip, options: QCOptio
       frame: run.start,
       time: run.start * dt,
       severity: Math.min(1, run.dist / 0.2),
-      detail: `${run.link} 触地滑移 ${(run.dist * 100).toFixed(1)}cm`,
+      detail: `${run.link} skates ${(run.dist * 100).toFixed(1)}cm while in contact`,
       link: run.link,
     });
   }
@@ -274,7 +274,7 @@ export function analyzeClip(robot: URDFRobot, clip: MotionClip, options: QCOptio
         frame: penRun.start,
         time: penRun.start * dt,
         severity: Math.min(1, penRun.depth / 0.1),
-        detail: `${penRun.link} 穿入地面 ${(penRun.depth * 100).toFixed(1)}cm`,
+        detail: `${penRun.link} penetrates ground ${(penRun.depth * 100).toFixed(1)}cm`,
         link: penRun.link,
       });
       penRun = null;
@@ -286,7 +286,7 @@ export function analyzeClip(robot: URDFRobot, clip: MotionClip, options: QCOptio
       frame: penRun.start,
       time: penRun.start * dt,
       severity: Math.min(1, penRun.depth / 0.1),
-      detail: `${penRun.link} 穿入地面 ${(penRun.depth * 100).toFixed(1)}cm`,
+      detail: `${penRun.link} penetrates ground ${(penRun.depth * 100).toFixed(1)}cm`,
       link: penRun.link,
     });
   }
@@ -319,7 +319,7 @@ export function analyzeClip(robot: URDFRobot, clip: MotionClip, options: QCOptio
       frame: hit.frame,
       time: hit.frame * dt,
       severity: Math.min(1, hit.overshoot / 0.2),
-      detail: `${joint} 超出限位 ${((hit.overshoot * 180) / Math.PI).toFixed(1)}°`,
+      detail: `${joint} exceeds limit by ${((hit.overshoot * 180) / Math.PI).toFixed(1)}°`,
       joint,
     });
   }
@@ -338,7 +338,7 @@ export function analyzeClip(robot: URDFRobot, clip: MotionClip, options: QCOptio
         frame: t,
         time: t * dt,
         severity: Math.min(1, d / 1.0),
-        detail: `基座单帧跳变 ${(d * 100).toFixed(0)}cm`,
+        detail: `base teleports ${(d * 100).toFixed(0)}cm in one frame`,
       });
     }
   }

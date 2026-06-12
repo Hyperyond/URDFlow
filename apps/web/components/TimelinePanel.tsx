@@ -55,7 +55,7 @@ export function TimelinePanel({
       </div>
       <div className="flex flex-col gap-1">
         {keyframes.length === 0 && (
-          <p className="text-xs text-zinc-600">拖 gizmo 摆位姿,点 + 加关键帧</p>
+          <p className="text-xs text-zinc-600">Drag the gizmo to pose, click + to add a keyframe</p>
         )}
         {keyframes.map((k, i) => (
           <div key={i} className="flex items-center justify-between rounded bg-white/[0.03] px-2 py-1 text-xs">

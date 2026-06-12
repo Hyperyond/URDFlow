@@ -337,7 +337,7 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     if (!robot) return;
     const cubes = objectsRef.current;
     if (cubes.length === 0) {
-      setError("先在左侧 Scene 添加一个正方体(或从 Scene 菜单选择预设场景)");
+      setError("Add a cube in the Scene panel first (or pick a preset from the Scene menu)");
       return;
     }
 
@@ -369,7 +369,7 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     const names = chain ? chain.joints : jointNames;
     const grips = chain && robot ? chainGrippers(robot, chain) : gripperJoints;
     if (grips.length === 0) {
-      setError("当前机型没有夹爪关节,抓取需要带夹爪的机型(如 Franka Panda / SO-101)");
+      setError("This robot has no gripper joints — grasping needs a gripper-equipped robot (e.g. Franka Panda / SO-101)");
       return;
     }
     setActiveChainIdx(chainIdx);
@@ -458,7 +458,7 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
       const plan = planOnce(cube.position);
       if (!plan) {
         if (cubes.length === 1) {
-          setError("目标不可达(超出手臂工作空间),把正方体拖近一点再试");
+          setError("Target unreachable (outside the arm's workspace) — drag the cube closer and retry");
           setKeyframes([]);
           return;
         }
@@ -470,7 +470,7 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
         const placeOk = tDist <= anchorR * 1.35 && canReach([target[0], target[1] + 0.05, target[2]]);
         if (!placeOk) {
           if (cubes.length === 1) {
-            setError("放置点超出手臂工作空间,把 target 拖近一点再试");
+            setError("Place point outside the arm's workspace — drag the target closer and retry");
             setKeyframes([]);
             return;
           }
@@ -528,13 +528,13 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     }
 
     if (segments.length === 0) {
-      setError("所有方块都不可达(超出工作空间),把它们拖近一点再试");
+      setError("No cube is reachable (all outside the workspace) — drag them closer and retry");
       setKeyframes([]);
       return;
     }
     const handNote =
-      autoHand && gripChainIdxs.length > 1 ? `已自动选择 ${chains[chainIdx]!.name}` : null;
-    const skipNote = skipped.length ? `第 ${skipped.join("、")} 个方块超出工作空间,已跳过` : null;
+      autoHand && gripChainIdxs.length > 1 ? `Auto-selected ${chains[chainIdx]!.name}` : null;
+    const skipNote = skipped.length ? `Cube(s) ${skipped.join(", ")} out of workspace, skipped` : null;
     setError([handNote, skipNote].filter(Boolean).join(";") || null);
 
     // return to the home pose at the end (arm goes back to rest)
