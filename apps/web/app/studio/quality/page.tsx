@@ -22,6 +22,8 @@ import {
 } from "@urdflow/urdf-web";
 
 const ROBOT_URDF = "/robots/g1/g1_29dof_spherehand.urdf";
+// Python backend (urdflow-api). Override with NEXT_PUBLIC_API_URL in deploy.
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 const BUILTIN = [
   { name: "climb_00.npz", url: "/datasets/omniretarget/climb_00.npz" },
@@ -147,6 +149,33 @@ export default function DatasetPage() {
     download(`urdflow_dataset_${selectedRows.length}clips.zip`, zip, "application/zip");
   }, [selectedRows]);
 
+  const [lerobotBusy, setLerobotBusy] = useState(false);
+  const [lerobotMsg, setLerobotMsg] = useState<string | null>(null);
+  const exportLeRobot = useCallback(async () => {
+    if (selectedRows.length === 0) return;
+    setLerobotBusy(true);
+    setLerobotMsg(null);
+    try {
+      const jointCount = selectedRows[0]!.clip.jointCount;
+      const fd = new FormData();
+      for (const r of selectedRows) {
+        fd.append("files", new Blob([r.bytes as BlobPart], { type: "application/octet-stream" }), r.name);
+      }
+      fd.append("robot_joint_count", String(jointCount));
+      fd.append("robot_type", "g1_29dof");
+      fd.append("joint_names", jointsRef.current.slice(0, jointCount).join(","));
+      const res = await fetch(`${API_BASE}/export/lerobot`, { method: "POST", body: fd });
+      if (!res.ok) throw new Error(`${res.status} ${await res.text().catch(() => res.statusText)}`);
+      const blob = await res.arrayBuffer();
+      download(`urdflow_lerobot_${selectedRows.length}ep.zip`, blob, "application/zip");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setLerobotMsg(`Backend export failed (${msg}). Is the API running at ${API_BASE}?`);
+    } finally {
+      setLerobotBusy(false);
+    }
+  }, [selectedRows]);
+
   const exportReport = useCallback(() => {
     const report = {
       generator: "URDFlow data-QC",
@@ -243,12 +272,22 @@ export default function DatasetPage() {
                 <button
                   onClick={exportZip}
                   disabled={selectedRows.length === 0}
-                  className="rounded bg-emerald-600/90 px-3 py-1.5 font-semibold text-white hover:bg-emerald-500 disabled:opacity-40"
+                  className="rounded bg-white/10 px-3 py-1.5 hover:bg-white/20 disabled:opacity-40"
+                  title="Bundle the raw .npz files (client-side)"
                 >
-                  Export selected ({selectedRows.length}) as zip
+                  Export .npz ({selectedRows.length})
+                </button>
+                <button
+                  onClick={() => void exportLeRobot()}
+                  disabled={selectedRows.length === 0 || lerobotBusy}
+                  className="rounded bg-emerald-600/90 px-3 py-1.5 font-semibold text-white hover:bg-emerald-500 disabled:opacity-40"
+                  title="Convert to a LeRobot-shaped dataset via the Python backend"
+                >
+                  {lerobotBusy ? "Exporting…" : `Export → LeRobot (${selectedRows.length})`}
                 </button>
               </div>
             </div>
+            {lerobotMsg && <div className="mt-2 text-xs text-amber-300">{lerobotMsg}</div>}
 
             <div className="mt-4 overflow-hidden rounded-xl border border-white/10">
               <table className="w-full text-sm">
