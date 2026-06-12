@@ -1,17 +1,100 @@
 @import "tailwindcss";
 
 @theme {
+  /* ---- palette: telemetry instrument, near-black with cyan signal ---- */
+  --color-base: #08090c;
+  --color-panel: #0d1016;
+  --color-raised: #12161e;
+  --color-line: #ffffff14;
+  --color-line-strong: #ffffff26;
+
   --color-accent: #22d3ee;
-  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+  --color-accent-dim: #0e7490;
+  --color-signal-ok: #34d399;
+  --color-signal-warn: #fbbf24;
+  --color-signal-bad: #fb7185;
+
+  --font-display: var(--font-display), "Chakra Petch", ui-sans-serif, sans-serif;
+  --font-body: var(--font-body), "Hanken Grotesk", ui-sans-serif, sans-serif;
+  --font-mono: var(--font-mono-jb), ui-monospace, "JetBrains Mono", Menlo, monospace;
 }
 
 html,
 body {
   height: 100%;
-  background: #0a0b0d;
+  background: var(--color-base);
   color: #e4e4e7;
+  font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
 }
+
+/* ---- atmosphere: faint engineering grid + top cyan haze, fixed behind all ---- */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(#ffffff08 1px, transparent 1px),
+    linear-gradient(90deg, #ffffff08 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, #000 35%, transparent 80%);
+}
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 70% 50% at 50% -10%, #22d3ee22, transparent 70%);
+}
+
+/* utility classes used across the workbench */
+.font-display { font-family: var(--font-display); }
+.font-mono { font-family: var(--font-mono); }
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: #71717a;
+}
+
+/* HUD corner ticks on panels */
+.hud { position: relative; }
+.hud::before,
+.hud::after {
+  content: "";
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-color: var(--color-accent);
+  opacity: 0.5;
+  pointer-events: none;
+}
+.hud::before { top: -1px; left: -1px; border-top: 1.5px solid; border-left: 1.5px solid; }
+.hud::after { bottom: -1px; right: -1px; border-bottom: 1.5px solid; border-right: 1.5px solid; }
+
+/* live pulse dot */
+@keyframes pulse-ring {
+  0% { box-shadow: 0 0 0 0 #34d39966; }
+  70% { box-shadow: 0 0 0 6px #34d39900; }
+  100% { box-shadow: 0 0 0 0 #34d39900; }
+}
+.pulse { animation: pulse-ring 2s infinite; }
+
+/* flow dashes along the pipeline connector */
+@keyframes flow { to { stroke-dashoffset: -16; } }
+.flow-line { stroke-dasharray: 4 4; animation: flow 1s linear infinite; }
+
+/* staggered entrance */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.rise { animation: rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) both; }
 
 /* 细滑块 + 青色发光 thumb（科技感） */
 input[type="range"] {
@@ -30,3 +113,9 @@ input[type="range"]::-webkit-slider-thumb {
   box-shadow: 0 0 6px 0 #22d3ee99;
   cursor: pointer;
 }
+
+/* slim scrollbars */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #ffffff1a; border-radius: 9999px; border: 3px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: #ffffff33; background-clip: content-box; }

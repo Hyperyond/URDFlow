@@ -58,6 +58,12 @@ export function MenuBar({ robotLabel, presets, uploaded, onPickPreset, onPickFil
         URDFlow
       </span>
 
+      <a
+        href="/studio"
+        className="rounded border border-accent/40 bg-accent/10 px-2 py-1 font-medium text-accent hover:bg-accent/20"
+      >
+        工作台 ↗
+      </a>
       <a href="/player" className="rounded px-2 py-1 text-zinc-300 hover:bg-white/10">
         轨迹播放器
       </a>
