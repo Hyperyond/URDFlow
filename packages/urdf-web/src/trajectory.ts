@@ -5,12 +5,19 @@ export interface Keyframe {
   position: [number, number, number];
   quaternion: [number, number, number, number]; // xyzw
   gripper: number;
+  /** Joint-space solution the planner verified for THIS waypoint. Playback IK uses
+   *  it as a strong null-space bias so per-tick re-solving lands in the same
+   *  configuration branch the plan was validated in (re-IK from an arbitrary warm
+   *  start sometimes converges to a pose whose TCP misses the grasp). */
+  jointHint?: Record<string, number>;
 }
 export interface EEPoseSample {
   t: number;
   position: [number, number, number];
   quaternion: [number, number, number, number];
   gripper: number;
+  /** jointHint of the segment's target keyframe (the one being approached). */
+  jointHint?: Record<string, number>;
 }
 
 const lerp = (a: number, b: number, u: number) => a + (b - a) * u;
@@ -36,6 +43,7 @@ export function interpolateKeyframes(kfs: Keyframe[], t: number): EEPoseSample {
     ],
     quaternion: [q.x, q.y, q.z, q.w],
     gripper: lerp(a.gripper, b.gripper, u),
+    jointHint: b.jointHint,
   };
 }
 

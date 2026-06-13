@@ -8,7 +8,13 @@ export interface GraspPlan {
   graspPos: [number, number, number];
   graspQuat: [number, number, number, number];
   prePos: [number, number, number];
+  /** The verified joint configuration AT the grasp pose (IK landed within reach tolerance). */
+  graspJoints?: GraspPlanJoints;
 }
+export interface GraspPlanJoints {
+  [joint: string]: number;
+}
+
 export interface PlanGraspOptions {
   candidates?: number;
   approachDist?: number;
@@ -23,6 +29,8 @@ export interface PlanGraspOptions {
   minApproachY?: number;
   /** Keep the pre-grasp waypoint at least this high above the ground plane. */
   clearance?: number;
+  /** Stop scanning candidates after this many ms and return the best found (or null). */
+  timeBudgetMs?: number;
   /** Joint-space pose used for the IK null-space bias and the cost reference. */
   restPose?: number[];
   /** Null-space pull strength toward restPose (default 0.03). */
@@ -59,6 +67,9 @@ export function planGrasp(
   opts: PlanGraspOptions = {},
 ): GraspPlan | null {
   const candidates = fibonacciSphere(opts.candidates ?? 24);
+  // unreachable targets burn the FULL candidate budget (72 IK solves ≈ seconds of
+  // main-thread block) — a deadline turns "the app froze" into "plan failed fast"
+  const deadline = opts.timeBudgetMs ? performance.now() + opts.timeBudgetMs : null;
   const approachDist = opts.approachDist ?? 0.1;
   const reach = opts.reachThreshold ?? 0.03;
   const minY = opts.minApproachY ?? 0.15;
@@ -87,6 +98,7 @@ export function planGrasp(
     floorY: box.y - clearance * 0.5,
   };
   for (const dir of candidates) {
+    if (deadline !== null && performance.now() > deadline) break; // return best-so-far
     // approaching from below the horizon means coming through the floor — never valid
     if (dir.y < minY) continue;
     // the gripper's approach axis points toward the box (= -approachDir); the twist
@@ -94,13 +106,37 @@ export function planGrasp(
     // joint6) often block one twist but not the other
     const base = new Quaternion().setFromUnitVectors(toolAxis, dir.clone().negate());
     for (const twist of [0, Math.PI / 2]) {
-      const quat = base
+      let quat = base
         .clone()
         .multiply(new Quaternion().setFromAxisAngle(toolAxis, twist));
+      // align the pad-separation axis with the nearest world X/Z so the pads land
+      // FLUSH on the box faces — at an arbitrary azimuth they pinch the corners and
+      // physics wedges the box out diagonally (kinematic attach never noticed)
+      if (opts.openAxis) {
+        const openLocal = new Vector3(...opts.openAxis);
+        let bestQ = quat;
+        let bestErr = Infinity;
+        for (const sign of [1, -1]) {
+          const w = openLocal.clone().applyQuaternion(quat);
+          const phi = Math.atan2(w.z, w.x);
+          const delta = phi - (Math.round(phi / (Math.PI / 2)) * Math.PI) / 2;
+          const cand = quat.clone().multiply(new Quaternion().setFromAxisAngle(toolAxis, sign * delta));
+          const wc = openLocal.clone().applyQuaternion(cand);
+          const phiC = Math.atan2(wc.z, wc.x);
+          const errC = Math.abs(phiC - (Math.round(phiC / (Math.PI / 2)) * Math.PI) / 2);
+          if (errC < bestErr) {
+            bestErr = errC;
+            bestQ = cand;
+          }
+        }
+        quat = bestQ;
+      }
       restore();
       solveIK(robot, eeLink, jointNames, boxPos, [quat.x, quat.y, quat.z, quat.w], ikOpts);
       const reached = toolWorldPosition(robot, eeLink, opts.tcpOffset);
       if (reached.distanceTo(box) > reach) continue;
+      // the verified configuration at the grasp — captured BEFORE the lift re-solve below
+      const graspJoints = Object.fromEntries(jointNames.map((n) => [n, robot.joints[n]!.angle as number]));
       const jointCost = jointNames.reduce(
         (s, n, i) => s + Math.abs((robot.joints[n]!.angle as number) - rest[i]!),
         0,
@@ -119,6 +155,10 @@ export function planGrasp(
         const w = new Vector3(...opts.openAxis).applyQuaternion(
           robot.links[eeLink]!.getWorldQuaternion(new Quaternion()),
         );
+        // near the ground this is a HARD constraint, not a preference: the lower
+        // pad would have to come up from under the floor — physics simply ejects
+        // the object sideways (the kinematic attach used to mask this too)
+        if (box.y < 0.08 && Math.abs(w.y) > 0.45) continue;
         openCost = Math.abs(w.y) * 2.0;
       }
       // configurations that park a joint on its limit have no margin left to track
@@ -153,6 +193,7 @@ export function planGrasp(
         graspPos: [box.x, box.y, box.z],
         graspQuat: [quat.x, quat.y, quat.z, quat.w],
         prePos: [pre.x, pre.y, pre.z],
+        graspJoints,
       };
     }
   }
@@ -196,14 +237,19 @@ export function buildGraspTrajectory(plan: GraspPlan, opts: GraspTrajectoryOptio
     kfs.push({ t: 0, position: opts.homePos, quaternion: opts.homeQuat ?? q, gripper: 0 });
     t = 1.5; // ease from home to pre-grasp over 1.5s
   }
-  kfs.push({ t, position: plan.prePos, quaternion: q, gripper: 0 }); // pre-grasp, open
-  kfs.push({ t: t + 1.5, position: plan.graspPos, quaternion: q, gripper: 0 }); // descend, still open
-  kfs.push({ t: t + 2.3, position: plan.graspPos, quaternion: q, gripper: 1 }); // close gripper
+  const hint = plan.graspJoints;
+  kfs.push({ t, position: plan.prePos, quaternion: q, gripper: 0, jointHint: hint }); // pre-grasp, open
+  kfs.push({ t: t + 1.5, position: plan.graspPos, quaternion: q, gripper: 0, jointHint: hint }); // descend, open
+  // settle dwell: under physics the arm needs a beat to converge on the grasp pose —
+  // closing while still descending pinches the object out like a watermelon seed
+  kfs.push({ t: t + 2.1, position: plan.graspPos, quaternion: q, gripper: 0, jointHint: hint });
+  kfs.push({ t: t + 3.1, position: plan.graspPos, quaternion: q, gripper: 1, jointHint: hint }); // slow close
   kfs.push({
-    t: t + 3.8,
+    t: t + 4.6,
     position: [plan.graspPos[0], plan.graspPos[1] + liftH, plan.graspPos[2]],
     quaternion: q,
     gripper: 1,
+    jointHint: hint,
   }); // lift
   return kfs;
 }

@@ -2,8 +2,32 @@
 
 import { useCallback, useEffect, useMemo, useRef, type RefObject } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
-import { PerspectiveCamera, WebGLRenderTarget, SRGBColorSpace, Box3, Vector3, type Object3D } from "three";
+import {
+  Color,
+  FloatType,
+  NearestFilter,
+  PerspectiveCamera,
+  RGBAFormat,
+  SRGBColorSpace,
+  WebGLRenderTarget,
+  Box3,
+  Vector3,
+  type Material,
+  type Mesh,
+  type Object3D,
+} from "three";
 import type { URDFRobot } from "@urdflow/urdf-web";
+import {
+  buildSegAssignments,
+  cameraMeta,
+  createDepthMaterial,
+  depthToMM,
+  flipToRGB,
+  segMaterial,
+  segToIds,
+  type SensorFrame,
+  type SensorSession,
+} from "../lib/sensorCapture";
 
 const W = 256;
 const H = 256;
@@ -20,6 +44,8 @@ export interface CaptureRigProps {
   /** Reports the auto-fitted positions once, so the scene can seed draggable proxies. */
   onAutoFrame?: (front: [number, number, number], top: [number, number, number]) => void;
   every?: number; // render to the panels every N frames (perf)
+  /** Active recording episode — when set, RGB+depth+seg frames buffer at session.hz. */
+  session?: SensorSession | null;
 }
 
 /**
@@ -38,6 +64,7 @@ export function CaptureRig({
   topPos,
   onAutoFrame,
   every = 2,
+  session,
 }: CaptureRigProps) {
   const { gl, scene } = useThree();
   const frontCam = useMemo(() => new PerspectiveCamera(50, 1, 0.01, 100), []);
@@ -45,7 +72,24 @@ export function CaptureRig({
   // sRGB color space so the off-screen feed matches the main viewport (not dark/linear)
   const frontRT = useMemo(() => new WebGLRenderTarget(W, H, { colorSpace: SRGBColorSpace }), []);
   const topRT = useMemo(() => new WebGLRenderTarget(W, H, { colorSpace: SRGBColorSpace }), []);
+  // sensor targets: float view-z depth + byte-exact segmentation ids (no AA, no filtering)
+  const depthRT = useMemo(
+    () =>
+      new WebGLRenderTarget(W, H, {
+        type: FloatType,
+        format: RGBAFormat,
+        minFilter: NearestFilter,
+        magFilter: NearestFilter,
+      }),
+    [],
+  );
+  const segRT = useMemo(
+    () => new WebGLRenderTarget(W, H, { minFilter: NearestFilter, magFilter: NearestFilter }),
+    [],
+  );
+  const depthMat = useMemo(() => createDepthMaterial(), []);
   const buf = useMemo(() => new Uint8Array(W * H * 4), []);
+  const depthBuf = useMemo(() => new Float32Array(W * H * 4), []);
   const flip = useMemo(() => new Uint8ClampedArray(W * H * 4), []);
   const frameRef = useRef(0);
 
@@ -99,8 +143,10 @@ export function CaptureRig({
     return () => {
       frontRT.dispose();
       topRT.dispose();
+      depthRT.dispose();
+      segRT.dispose();
     };
-  }, [frontRT, topRT]);
+  }, [frontRT, topRT, depthRT, segRT]);
 
   function renderTo(cam: PerspectiveCamera, rt: WebGLRenderTarget, dom: HTMLCanvasElement | null) {
     gl.setRenderTarget(rt);
@@ -117,13 +163,76 @@ export function CaptureRig({
     dom.getContext("2d")?.putImageData(new ImageData(flip, W, H), 0, 0);
   }
 
-  useFrame(() => {
+  /** One synchronized RGB + depth + seg sample of both cameras into the session buffer. */
+  function captureSensors(s: SensorSession, elapsed: number) {
+    if (!s.due(elapsed) || !robot) return;
+    frontCam.updateMatrixWorld();
+    topCam.updateMatrixWorld();
+    s.registerCamera(cameraMeta("front", W, H, frontCam));
+    s.registerCamera(cameraMeta("top", W, H, topCam));
+
+    const frame: SensorFrame = {
+      t: s.episodeTime(elapsed),
+      qpos: s.readQpos(robot),
+      objPoses: s.readObjPoses(scene),
+      rgb: {},
+      depth: {},
+      seg: {},
+    };
+    const assignments = buildSegAssignments(scene, CAPTURE_LAYER, s.segLabels);
+    // neutralize viewport background/clear so sensor passes read 0 where nothing was hit
+    const bg = scene.background;
+    const clearColor = gl.getClearColor(new Color());
+    const clearAlpha = gl.getClearAlpha();
+
+    for (const [name, cam, rt] of [
+      ["front", frontCam, frontRT],
+      ["top", topCam, topRT],
+    ] as const) {
+      // RGB — render fresh (the preview pass may have skipped this frame)
+      gl.setRenderTarget(rt);
+      gl.clear();
+      gl.render(scene, cam);
+      gl.readRenderTargetPixels(rt, 0, 0, W, H, buf);
+      frame.rgb[name] = flipToRGB(buf, W, H);
+
+      scene.background = null;
+      gl.setClearColor(0x000000, 1);
+
+      // depth — override material writes view-space meters into R of a float target
+      scene.overrideMaterial = depthMat;
+      gl.setRenderTarget(depthRT);
+      gl.clear();
+      gl.render(scene, cam);
+      gl.readRenderTargetPixels(depthRT, 0, 0, W, H, depthBuf);
+      frame.depth[name] = depthToMM(depthBuf, W, H);
+      scene.overrideMaterial = null;
+
+      // segmentation — swap every capture-layer mesh to its flat id material
+      const saved: [Mesh, Material | Material[]][] = assignments.map((a) => [a.mesh, a.mesh.material]);
+      assignments.forEach((a) => (a.mesh.material = segMaterial(a.id)));
+      gl.setRenderTarget(segRT);
+      gl.clear();
+      gl.render(scene, cam);
+      gl.readRenderTargetPixels(segRT, 0, 0, W, H, buf);
+      frame.seg[name] = segToIds(buf, W, H);
+      saved.forEach(([m, mat]) => (m.material = mat));
+
+      scene.background = bg;
+      gl.setClearColor(clearColor, clearAlpha);
+    }
+    gl.setRenderTarget(null);
+    s.frames.push(frame);
+  }
+
+  useFrame((state) => {
     frameRef.current++;
-    if (every > 1 && frameRef.current % every !== 0) return;
     // async-loaded robot meshes default to layer 0 — keep them on the capture layer
     if (robot) robot.traverse((o) => o.layers.enable(CAPTURE_LAYER));
     // re-fit periodically while meshes finish loading (bbox grows from empty → full)
     if (frameRef.current % 30 === 0) reframe();
+    if (session) captureSensors(session, state.clock.elapsedTime);
+    if (every > 1 && frameRef.current % every !== 0) return;
     renderTo(frontCam, frontRT, frontCanvas.current);
     renderTo(topCam, topRT, topCanvas.current);
   });

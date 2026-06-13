@@ -36,9 +36,10 @@ describe("buildGraspTrajectory", () => {
       prePos: [0, 0.6, 0] as [number, number, number],
     };
     const kfs = buildGraspTrajectory(plan, { liftHeight: 0.15 });
-    expect(kfs.map((k) => k.gripper)).toEqual([0, 0, 1, 1]);
+    // descend → settle dwell (still open) → slow close → lift
+    expect(kfs.map((k) => k.gripper)).toEqual([0, 0, 0, 1, 1]);
     expect(kfs[1]!.position).toEqual([0, 0.5, 0]);
-    expect(kfs[3]!.position[1]).toBeCloseTo(0.65, 6);
+    expect(kfs[4]!.position[1]).toBeCloseTo(0.65, 6);
   });
 
   it("prepends a home keyframe so playback eases in (no jump)", () => {
@@ -49,10 +50,10 @@ describe("buildGraspTrajectory", () => {
       prePos: [0, 0.6, 0] as [number, number, number],
     };
     const kfs = buildGraspTrajectory(plan, { homePos: [0, 1, 0], liftHeight: 0.15 });
-    expect(kfs).toHaveLength(5);
+    expect(kfs).toHaveLength(6);
     expect(kfs[0]!.position).toEqual([0, 1, 0]);
-    expect(kfs.map((k) => k.gripper)).toEqual([0, 0, 0, 1, 1]);
-    expect(kfs[kfs.length - 1]!.t).toBeGreaterThan(5); // slowed down, ~5.3s
+    expect(kfs.map((k) => k.gripper)).toEqual([0, 0, 0, 0, 1, 1]);
+    expect(kfs[kfs.length - 1]!.t).toBeGreaterThan(5); // slowed down, ~6.1s
   });
 });
 

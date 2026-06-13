@@ -43,6 +43,8 @@ const GRASP_RADIUS = 0.06;
 export interface SceneObject {
   id: string;
   position: [number, number, number];
+  /** Orientation (x,y,z,w) — set by physics playback when a cube tumbles. */
+  quat?: [number, number, number, number];
   color?: string;
 }
 export interface SceneTarget {
@@ -124,7 +126,14 @@ function spawnSpot(
   return [x, z];
 }
 
-export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
+export function useGraspEditor(
+  robot: URDFRobot | null,
+  model: JointInfo[],
+  /** When set+active, playback drives the physics sim instead of kinematic attach. */
+  physicsRef?: {
+    current: { active: boolean; drive: (robot: URDFRobot) => void; simTime: () => number } | null;
+  },
+) {
   const [objects, setObjects] = useState<SceneObject[]>([]);
   const objectsRef = useRef(objects);
   objectsRef.current = objects;
@@ -193,6 +202,9 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
       let tool = toolByChainRef.current.get(chainIdx);
       if (!tool && robot) {
         tool = findToolFrame(robot, chains.length > 1 && grips.length ? grips : undefined);
+        if ((window as unknown as { __physDebug?: boolean }).__physDebug) {
+          console.info("[calib]", JSON.stringify({ tcp: calib?.tcp, palm: calib?.palmLink, toolLink: tool.link, toolOffset: tool.offset }));
+        }
         if (calib) {
           const len = Math.hypot(...calib.tcp);
           tool = {
@@ -396,6 +408,8 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
         restGain: names.length >= 8 ? 0.06 : 0.03,
         limits: softLimitsRef.current,
         openAxis: calib?.openAxis,
+        // unreachable cubes must fail in well under a second, not freeze the tab
+        timeBudgetMs: 600,
       };
       // two-pass: steep top-down first for EVERY arm (slanted approaches sweep a
       // finger through the cube on the way down); only if nothing steep is reachable
@@ -419,7 +433,10 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
       if (!cube) continue; // deleted mid-program
       const tgts = targetsRef.current;
       const target = tgts.length ? tgts[i % tgts.length]!.position : null;
-      const plan = planOnce(cube.position);
+      // cheap radius gate BEFORE burning the IK candidate budget: a cube dragged far
+      // beyond the workspace is rejected instantly instead of after 72 failed solves
+      const cubeDist = Math.hypot(cube.position[0] - baseRef.current.x, cube.position[2] - baseRef.current.z);
+      const plan = cubeDist <= st.anchorR * 2.0 + 0.1 ? planOnce(cube.position) : null;
       if (!plan) {
         if (st.queue.length === 1)
           return fail("Target unreachable (outside the arm's workspace) — drag the cube closer and retry");
@@ -618,12 +635,36 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     if (!isPlaying || !robot || keyframes.length < 2) return;
     const { tool, calib } = toolFor(activeChainIdx);
     if (!tool.link) return;
-    // close only far enough to touch the cube faces — no finger/cube clipping
-    const closure = closureForWidth(gripperJoints, CUBE_SIZE);
+    // kinematic mode: close only to the cube faces — no finger/cube clipping.
+    // physics mode: command BEYOND the touch width — a position actuator parked
+    // exactly at the surface exerts ~zero force (PD error ≈ 0), so the cube slips;
+    // targeting inside the object makes contact + forcerange produce real grip force.
+    const SQUEEZE = 0.014;
+    const touchClosure = closureForWidth(gripperJoints, CUBE_SIZE);
+    const squeezeClosure = closureForWidth(gripperJoints, CUBE_SIZE - SQUEEZE);
     let raf = 0;
     let last = performance.now();
+    // physics mode: IK must warm-start from its OWN last command, not the (lagging)
+    // sim pose — otherwise unconverged solutions feed back as targets and the arm
+    // chases a reference it itself keeps dragging behind, never reaching the grasp
+    let lastCmd: Record<string, number> | null = null;
+    let lastSimT: number | null = null;
+    // terminal servo (physics mode): integrate the EE error (reference target −
+    // simulated TCP) while the target dwells at the grasp point, and command
+    // target+bias. Cancels every constant offset at once — TCP calibration bias,
+    // per-tick IK residual, PD gravity sag — which individually are ~1 cm each
+    // but together push a 5 cm cube out of the 8 cm finger gap.
+    let servoBias: [number, number, number] = [0, 0, 0];
+    let prevTgt: [number, number, number] | null = null;
     const tick = (now: number) => {
-      const dt = Math.min((now - last) / 1000, 0.1); // clamp big gaps (planning stall, tab refocus)
+      // physics mode advances the playhead by SIM time, so the reference never
+      // outruns a slower-than-realtime sim (gripper closing before the arm arrives)
+      const physT = physicsRef?.current?.active ? physicsRef.current.simTime() : null;
+      const dt =
+        physT !== null
+          ? Math.min(Math.max(physT - (lastSimT ?? physT), 0), 0.1)
+          : Math.min((now - last) / 1000, 0.1); // clamp big gaps (planning stall, tab refocus)
+      lastSimT = physT;
       last = now;
       let nt = playheadRef.current + dt;
       let ended = false;
@@ -640,54 +681,102 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
           ended = true;
         }
       }
+      const phys = physicsRef?.current;
+      // simulated TCP, read while the robot still shows last frame's sim pose
+      const tcpSim = phys?.active ? toolWorldPosition(robot, tool.link, tool.offset) : null;
       playheadRef.current = nt;
       applyBasePose(robot, baseAt(nt));
       const walking = inWalk(nt);
       const pose = interpolateKeyframes(keyframes, nt);
+      if (phys?.active) {
+        const raw = pose.position;
+        const isStatic =
+          prevTgt !== null &&
+          Math.hypot(raw[0] - prevTgt[0], raw[1] - prevTgt[1], raw[2] - prevTgt[2]) < 1e-5;
+        prevTgt = [raw[0], raw[1], raw[2]];
+        const clamp = (v: number) => Math.max(-0.06, Math.min(0.06, v));
+        if (pose.jointHint && isStatic && tcpSim) {
+          const k = 0.08; // integral gain per tick — gentle enough for the sim's PD lag
+          servoBias = [
+            clamp(servoBias[0] + k * (raw[0] - tcpSim.x)),
+            clamp(servoBias[1] + k * (raw[1] - tcpSim.y)),
+            clamp(servoBias[2] + k * (raw[2] - tcpSim.z)),
+          ];
+        } else if (!pose.jointHint) {
+          // outside the grasp phase: bleed the bias off smoothly instead of snapping
+          servoBias = [servoBias[0] * 0.97, servoBias[1] * 0.97, servoBias[2] * 0.97];
+        }
+        pose.position = [raw[0] + servoBias[0], raw[1] + servoBias[1], raw[2] + servoBias[2]];
+      }
       if (!walking) {
+        // restore the kinematic reference before solving (sim pose was rendered last frame)
+        if (phys?.active && lastCmd) {
+          for (const n of Object.keys(lastCmd)) robot.setJointValue(n, lastCmd[n]!);
+        }
+        // the planner verified a specific joint configuration for the grasp phase —
+        // bias per-tick IK strongly toward it so re-solving can't drift into a
+        // different branch whose TCP misses the cube (physics exposed this; the
+        // kinematic attach radius used to mask it)
+        const hint = pose.jointHint;
+        const hintRest = hint ? jointNames.map((n) => hint[n] ?? ((robot.joints[n]?.angle as number) ?? 0)) : null;
         solveIK(robot, tool.link, jointNames, pose.position, pose.quaternion, {
           iterations: 30,
           lambda: 0.06,
           tcpOffset: tool.offset,
-          restPose: restRef.current ?? undefined,
-          restGain: jointNames.length >= 8 ? 0.06 : 0.02,
+          restPose: hintRest ?? restRef.current ?? undefined,
+          restGain: hintRest ? 0.15 : jointNames.length >= 8 ? 0.06 : 0.02,
           limits: softLimitsRef.current,
           rotWeight,
           floorY: surfaceYRef.current + 0.008,
         });
-        if (calib) applyGripperCalibrated(robot, calib, pose.gripper, CUBE_SIZE);
-        else applyGripper(robot, gripperJoints, pose.gripper * closure);
-      }
-      // kinematic attach with a grasp gate: closing only grabs the segment's cube when
-      // the TCP is actually AT it — no more telekinesis when the approach missed
-      const seg = segmentsRef.current.find((s) => nt >= s.start && s.end + 0.5 >= nt);
-      const cubeId = seg?.cubeId;
-      const closed = pose.gripper > 0.5;
-      const tcp = toolWorldPosition(robot, tool.link, tool.offset);
-      if (closed && !carriedRef.current && cubeId && !walking) {
-        const c = objectsRef.current.find((o) => o.id === cubeId);
-        grabbedRef.current =
-          !!c && Math.hypot(tcp.x - c.position[0], tcp.y - c.position[1], tcp.z - c.position[2]) <= GRASP_RADIUS;
-      }
-      if (grabbedRef.current && cubeId) {
-        if (closed) {
-          // carry: the cube rides the bite point
-          setObjects((o) =>
-            o.map((x) => (x.id === cubeId ? { ...x, position: [tcp.x, tcp.y, tcp.z] as [number, number, number] } : x)),
-          );
-        } else if (carriedRef.current) {
-          // release: the cube settles on the support surface right under the bite point
-          setObjects((o) =>
-            o.map((x) =>
-              x.id === cubeId
-                ? { ...x, position: [tcp.x, surfaceYRef.current + CUBE_HALF, tcp.z] as [number, number, number] }
-                : x,
-            ),
-          );
-          grabbedRef.current = false;
+        if (calib) applyGripperCalibrated(robot, calib, pose.gripper, CUBE_SIZE - (phys?.active ? SQUEEZE : 0));
+        else applyGripper(robot, gripperJoints, pose.gripper * (phys?.active ? squeezeClosure : touchClosure));
+        if (phys?.active) {
+          lastCmd = {};
+          for (const n of jointNames) lastCmd[n] = (robot.joints[n]?.angle as number) ?? 0;
+          for (const g of gripperJoints) lastCmd[g.name] = (robot.joints[g.name]?.angle as number) ?? 0;
         }
       }
-      carriedRef.current = closed && !walking ? true : closed;
+      if (phys?.active) {
+        // physics playback: the IK pose just written to the robot becomes the
+        // actuator targets; the sim's answer overwrites the render pose. The cube
+        // is a free body in the sim — whether the grasp holds is decided by
+        // contact + friction, not by the kinematic attach below.
+        phys.drive(robot);
+      } else {
+        // kinematic attach with a grasp gate: closing only grabs the segment's cube when
+        // the TCP is actually AT it — no more telekinesis when the approach missed
+        const seg = segmentsRef.current.find((s) => nt >= s.start && s.end + 0.5 >= nt);
+        const cubeId = seg?.cubeId;
+        const closed = pose.gripper > 0.5;
+        const tcp = toolWorldPosition(robot, tool.link, tool.offset);
+        if (closed && !carriedRef.current && cubeId && !walking) {
+          const c = objectsRef.current.find((o) => o.id === cubeId);
+          grabbedRef.current =
+            !!c && Math.hypot(tcp.x - c.position[0], tcp.y - c.position[1], tcp.z - c.position[2]) <= GRASP_RADIUS;
+        }
+        if (grabbedRef.current && cubeId) {
+          if (closed) {
+            // carry: the cube rides the bite point
+            setObjects((o) =>
+              o.map((x) =>
+                x.id === cubeId ? { ...x, position: [tcp.x, tcp.y, tcp.z] as [number, number, number] } : x,
+              ),
+            );
+          } else if (carriedRef.current) {
+            // release: the cube settles on the support surface right under the bite point
+            setObjects((o) =>
+              o.map((x) =>
+                x.id === cubeId
+                  ? { ...x, position: [tcp.x, surfaceYRef.current + CUBE_HALF, tcp.z] as [number, number, number] }
+                  : x,
+              ),
+            );
+            grabbedRef.current = false;
+          }
+        }
+        carriedRef.current = closed && !walking ? true : closed;
+      }
       // live-record the timeline curves at 20 Hz as the program plays through
       const rec = trackRecRef.current;
       if (rec && nt >= rec.nextT) {
@@ -810,6 +899,10 @@ export function useGraspEditor(robot: URDFRobot | null, model: JointInfo[]) {
     removeTarget: (id: string) => {
       invalidate();
       setTargets((t) => t.filter((x) => x.id !== id));
+    },
+    /** Physics sync: full pose (position + orientation), no plan invalidation. */
+    setObjectPose: (id: string, p: [number, number, number], quat: [number, number, number, number]) => {
+      setObjects((o) => o.map((x) => (x.id === id ? { ...x, position: p, quat } : x)));
     },
     moveObject: (id: string, p: [number, number, number]) => {
       invalidate();

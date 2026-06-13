@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Circle, Play, Pause, Square, Repeat, Download } from "lucide-react";
+import { Circle, Play, Pause, Square, Repeat, Download, Atom, Loader2 } from "lucide-react";
 import type { Keyframe } from "@urdflow/urdf-web";
 
 export interface TimelineProps {
@@ -18,6 +18,8 @@ export interface TimelineProps {
   onStop: () => void;
   onToggleLoop: () => void;
   onExport: () => void;
+  /** MuJoCo-backed playback: undefined hides the toggle (unsupported robot). */
+  physics?: { status: "off" | "booting" | "ready" | "error"; error: string | null; onToggle: () => void };
 }
 
 function TBtn({
@@ -85,6 +87,7 @@ export function Timeline({
   onStop,
   onToggleLoop,
   onExport,
+  physics,
 }: TimelineProps) {
   const pct = duration > 0 ? playhead / duration : 0;
   const hasCurves = jointTracks.length > 0;
@@ -107,6 +110,27 @@ export function Timeline({
         <span className="ml-2 font-mono text-[11px] text-zinc-400">
           {playhead.toFixed(2)} / {duration.toFixed(2)}s
         </span>
+        {physics && (
+          <button
+            title={
+              physics.status === "error"
+                ? `Physics failed: ${physics.error ?? "unknown"}`
+                : "Physics playback (MuJoCo) — contacts and gravity instead of kinematic replay"
+            }
+            onClick={physics.onToggle}
+            className={`ml-3 flex items-center gap-1.5 rounded px-2 py-1 text-[11px] transition-colors ${
+              physics.status === "ready"
+                ? "bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25"
+                : physics.status === "error"
+                  ? "bg-red-500/15 text-red-300 hover:bg-red-500/25"
+                  : "text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+            }`}
+          >
+            {physics.status === "booting" ? <Loader2 size={13} className="animate-spin" /> : <Atom size={13} />}
+            Physics
+            {physics.status === "ready" ? " · on" : physics.status === "error" ? " · failed" : ""}
+          </button>
+        )}
         <button
           onClick={onExport}
           className="ml-auto flex items-center gap-1.5 rounded bg-white/5 px-2.5 py-1 text-[11px] text-zinc-200 transition-colors hover:bg-white/10"

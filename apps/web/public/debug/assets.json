@@ -1,0 +1,38 @@
+[
+  {
+    "file": "link0_0.stl",
+    "url": "/robots/panda/meshes/collision/link0.stl"
+  },
+  {
+    "file": "link1_1.stl",
+    "url": "/robots/panda/meshes/collision/link1.stl"
+  },
+  {
+    "file": "link2_2.stl",
+    "url": "/robots/panda/meshes/collision/link2.stl"
+  },
+  {
+    "file": "link3_3.stl",
+    "url": "/robots/panda/meshes/collision/link3.stl"
+  },
+  {
+    "file": "link4_4.stl",
+    "url": "/robots/panda/meshes/collision/link4.stl"
+  },
+  {
+    "file": "link5_5.stl",
+    "url": "/robots/panda/meshes/collision/link5.stl"
+  },
+  {
+    "file": "link6_6.stl",
+    "url": "/robots/panda/meshes/collision/link6.stl"
+  },
+  {
+    "file": "link7_7.stl",
+    "url": "/robots/panda/meshes/collision/link7.stl"
+  },
+  {
+    "file": "hand_8.stl",
+    "url": "/robots/panda/meshes/collision/hand.stl"
+  }
+]

@@ -10,7 +10,7 @@ export interface NpyArray {
   shape: number[];
   dtype: string;
   /** Flat C-order data. int64 is converted to number (throws beyond 2^53). */
-  data: Float64Array | Float32Array | Int32Array;
+  data: Float64Array | Float32Array | Int32Array | Uint16Array | Uint8Array;
 }
 
 const te = new TextDecoder("utf-8");
@@ -65,6 +65,10 @@ export function parseNpy(buf: Uint8Array): NpyArray {
       return { shape, dtype: descr, data: new Float32Array(aligned(count * 4)) };
     case "<i4":
       return { shape, dtype: descr, data: new Int32Array(aligned(count * 4)) };
+    case "<u2":
+      return { shape, dtype: descr, data: new Uint16Array(aligned(count * 2)) };
+    case "|u1":
+      return { shape, dtype: descr, data: new Uint8Array(aligned(count)) };
     case "<i8": {
       const big = new BigInt64Array(aligned(count * 8));
       const out = new Float64Array(count);

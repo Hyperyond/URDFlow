@@ -1,0 +1,69 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>MuJoCo boot harness</title>
+<pre id="log">boot…</pre>
+<script type="module">
+  const out = document.getElementById("log");
+  const say = (s) => {
+    out.textContent += "\n" + s;
+    console.log("[phys-debug]", s);
+  };
+  const params = new URLSearchParams(location.search);
+  const mode = params.get("mode") ?? "minimal";
+
+  let xml, assets = [];
+  if (mode === "minimal") {
+    xml = `<mujoco model="t">
+  <option timestep="0.002" integrator="implicitfast"/>
+  <worldbody>
+    <geom name="ground" type="plane" size="10 10 0.1"/>
+    <body name="box" pos="0 0 1"><freejoint/><geom type="box" size="0.025 0.025 0.025" mass="0.05"/></body>
+  </worldbody>
+</mujoco>`;
+  } else {
+    // full studio pipeline output, fetched from a pre-dumped file
+    xml = await (await fetch("/debug/scene.xml")).text();
+    const list = await (await fetch("/debug/assets.json")).json();
+    assets = await Promise.all(
+      list.map(async (f) => ({ file: f.file, buf: await (await fetch(f.url)).arrayBuffer() })),
+    );
+    say(`fetched ${assets.length} assets`);
+    if (mode === "nomesh") {
+      xml = xml.replace(/^\s*<geom type="mesh"[^\n]*\n/gm, "").replace(/<asset>[\s\S]*?<\/asset>\n/, "");
+      assets = [];
+    } else if (mode === "onemesh") {
+      // keep only link0's mesh geom + asset
+      xml = xml
+        .replace(/^\s*<geom type="mesh" mesh="(?!link0_0)[^\n]*\n/gm, "")
+        .replace(/^\s*<mesh name="(?!link0_0)[^\n]*\n/gm, "");
+      assets = assets.slice(0, 1);
+    } else if (mode === "noequality") {
+      xml = xml.replace(/<equality>[\s\S]*?<\/equality>\n/, "");
+    } else if (mode === "nothread") {
+      xml = xml.replace("<compiler ", '<compiler usethread="false" ');
+    } else if (/^mesh\d+$/.test(mode)) {
+      // keep only the first N meshes
+      const n = Number(mode.slice(4));
+      const keep = new Set(assets.slice(0, n).map((a) => a.file.replace(/\.stl$/, "")));
+      xml = xml
+        .replace(/^\s*<geom type="mesh" mesh="([^"]+)"[^\n]*\n/gm, (line, name) => (keep.has(name) ? line : ""))
+        .replace(/^\s*<mesh name="([^"]+)"[^\n]*\n/gm, (line, name) => (keep.has(name) ? line : ""));
+      assets = assets.slice(0, n);
+    }
+    say(`variant=${mode} assets=${assets.length}`);
+  }
+
+  // ?ctrl=a,b,c,… — actuator targets to hold for the settle test
+  const ctrl = params.get("ctrl")?.split(",").map(Number) ?? null;
+
+  const w = new Worker("/debug/phys.worker.js", { type: "module" });
+  w.onmessage = (e) => {
+    if (e.data.step) say("step: " + e.data.step);
+    else if (e.data.error) say("ERROR: " + e.data.error);
+    else if (e.data.done)
+      say(`DONE nq=${e.data.nq} ncon=${e.data.ncon} qpos=${e.data.qpos.map((v) => v.toFixed(4)).join(",")}`);
+  };
+  w.onerror = (e) => say("WORKER ERROR: " + e.message);
+  w.postMessage({ xml, assets, ctrl }, assets.map((a) => a.buf));
+  say("mode=" + mode + " — worker booted");
+</script>

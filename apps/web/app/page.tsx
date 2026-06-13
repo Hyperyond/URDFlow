@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useRobotSource } from "../lib/useRobotSource";
 import { useGraspEditor } from "../lib/useGraspEditor";
+import { useSensorRecorder } from "../lib/useSensorRecorder";
+import { useStudioPhysics, type PhysicsDrive } from "../lib/physics/useStudioPhysics";
 import { entriesFromFileList, entriesFromZip, entriesFromDataTransfer } from "../lib/fileInput";
 import { PRESETS } from "../lib/presets";
 import { buildScene, type SceneKind } from "../lib/scenes";
@@ -16,7 +18,24 @@ import { LoadingOverlay } from "../components/LoadingOverlay";
 
 export default function Page() {
   const r = useRobotSource();
-  const ed = useGraspEditor(r.robot, r.model);
+  // physics drive handle — filled by useStudioPhysics below, read by the playback tick
+  const physDriveRef = useRef<PhysicsDrive | null>(null);
+  const ed = useGraspEditor(r.robot, r.model, physDriveRef);
+  const sensors = useSensorRecorder();
+  const [physicsOn, setPhysicsOn] = useState(false);
+  const phys = useStudioPhysics({
+    enabled: physicsOn,
+    robot: r.robot,
+    source: r.source,
+    objects: ed.objects,
+    isPlaying: ed.isPlaying,
+    onCubePose: ed.setObjectPose,
+  });
+  useEffect(() => {
+    physDriveRef.current = phys.driveRef.current;
+  });
+  // ground-level workspaces only for now (no table modeled, fixed base assumed)
+  const physicsSupported = ed.surfaceY === 0 && !!r.robot;
   const [uploaded, setUploaded] = useState<{ label: string }[]>([]);
   const frontCamRef = useRef<HTMLCanvasElement>(null);
   const topCamRef = useRef<HTMLCanvasElement>(null);
@@ -100,6 +119,7 @@ export default function Page() {
               setCamPose((c) => ({ front: c.front ?? front, top: c.top ?? top }))
             }
             captureRefs={{ front: frontCamRef, top: topCamRef }}
+            sensorSession={sensors.session}
           />
           {r.loading && <LoadingOverlay progress={r.progress} />}
           {r.error && (
@@ -113,7 +133,7 @@ export default function Page() {
             </div>
           )}
         </main>
-        <CameraPanel frontRef={frontCamRef} topRef={topCamRef} />
+        <CameraPanel frontRef={frontCamRef} topRef={topCamRef} sensors={sensors} />
       </div>
       <Timeline
         keyframes={ed.keyframes}
@@ -126,9 +146,17 @@ export default function Page() {
         onRecord={ed.toggleRecord}
         onPlay={ed.play}
         onPause={ed.pause}
-        onStop={ed.stop}
+        onStop={() => {
+          ed.stop();
+          phys.reset(); // physics restart: arm + cubes back to their boot pose
+        }}
         onToggleLoop={ed.toggleLoop}
         onExport={ed.exportEpisode}
+        physics={
+          physicsSupported
+            ? { status: phys.status, error: phys.error, onToggle: () => setPhysicsOn((v) => !v) }
+            : undefined
+        }
       />
     </div>
   );

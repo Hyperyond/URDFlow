@@ -12,13 +12,24 @@ import {
   Environment,
   Lightformer,
 } from "@react-three/drei";
-import { ACESFilmicToneMapping, Box3, BufferGeometry, Float32BufferAttribute, Vector3, type Object3D } from "three";
+import {
+  ACESFilmicToneMapping,
+  Box3,
+  BufferGeometry,
+  Float32BufferAttribute,
+  Quaternion,
+  Vector3,
+  type Object3D,
+} from "three";
 import type { URDFRobot } from "@urdflow/urdf-web";
 import { CaptureRig } from "./CaptureRig";
+import type { SensorSession } from "../lib/sensorCapture";
 
 export interface SceneObj {
   id: string;
   position: [number, number, number];
+  /** Orientation (x,y,z,w) — physics playback sets this when a cube tumbles. */
+  quat?: [number, number, number, number];
   color?: string;
 }
 
@@ -41,6 +52,8 @@ export interface RobotViewerProps {
   onMoveCamera?: (which: "front" | "top", p: [number, number, number]) => void;
   onAutoFrameCameras?: (front: [number, number, number], top: [number, number, number]) => void;
   captureRefs?: { front: RefObject<HTMLCanvasElement | null>; top: RefObject<HTMLCanvasElement | null> };
+  /** Active sensor-recording episode, forwarded to the CaptureRig. */
+  sensorSession?: SensorSession | null;
 }
 
 /**
@@ -51,17 +64,22 @@ export interface RobotViewerProps {
  */
 function SceneItem({
   position,
+  quat,
   selected,
   captureVisible = true,
   showY = false,
+  segName,
   onSelect,
   onMove,
   children,
 }: {
   position: [number, number, number];
+  quat?: [number, number, number, number];
   selected: boolean;
   captureVisible?: boolean;
   showY?: boolean;
+  /** Label for sensor segmentation masks (capture-visible items only). */
+  segName?: string;
   onSelect: () => void;
   onMove: (p: [number, number, number]) => void;
   children: ReactNode;
@@ -69,12 +87,14 @@ function SceneItem({
   const [obj, setObj] = useState<Object3D | null>(null);
   useEffect(() => {
     if (captureVisible) obj?.traverse((o) => o.layers.enable(1));
-  }, [obj, captureVisible]);
+    if (obj && segName) obj.userData.segName = segName;
+  }, [obj, captureVisible, segName]);
   return (
     <>
       <group
         ref={setObj}
         position={position}
+        quaternion={quat ? new Quaternion(...quat) : undefined}
         onClick={(e) => {
           e.stopPropagation();
           onSelect();
@@ -186,6 +206,7 @@ export function RobotViewer({
   onMoveCamera,
   onAutoFrameCameras,
   captureRefs,
+  sensorSession,
 }: RobotViewerProps) {
   useEffect(() => {
     robot?.traverse((o) => o.layers.enable(1));
@@ -255,6 +276,7 @@ export function RobotViewer({
             frontPos={cameraPoses?.front}
             topPos={cameraPoses?.top}
             onAutoFrame={onAutoFrameCameras}
+            session={sensorSession}
           />
         )}
 
@@ -263,7 +285,9 @@ export function RobotViewer({
           <SceneItem
             key={obj.id}
             position={obj.position}
+            quat={obj.quat}
             selected={selectedId === obj.id}
+            segName={`object:${obj.id}`}
             onSelect={() => onSelect(obj.id)}
             onMove={(p) => onMoveObject(obj.id, p)}
           >
@@ -364,7 +388,10 @@ export function RobotViewer({
             const d = Math.max(0.3, maxZ - minZ);
             return (
               <mesh
-                ref={(m) => m?.layers.enable(1)}
+                ref={(m) => {
+                  m?.layers.enable(1);
+                  if (m) m.userData.segName = "table";
+                }}
                 position={[(minX + maxX) / 2, surfaceY - 0.015, (minZ + maxZ) / 2]}
               >
                 <boxGeometry args={[w, 0.03, d]} />
@@ -374,7 +401,15 @@ export function RobotViewer({
           })()}
 
         {/* large ground (both layers): robot + objects sit on it; in viewport AND camera feeds */}
-        <mesh ref={(m) => m?.layers.enable(1)} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
+        <mesh
+          ref={(m) => {
+            m?.layers.enable(1);
+            if (m) m.userData.segName = "ground";
+          }}
+          rotation={[-Math.PI / 2, 0, 0]}
+          position={[0, 0, 0]}
+          receiveShadow
+        >
           <planeGeometry args={[8, 8]} />
           <meshStandardMaterial color="#d4d7db" roughness={0.85} metalness={0} />
         </mesh>
